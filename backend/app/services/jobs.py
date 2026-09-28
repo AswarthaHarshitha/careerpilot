@@ -187,6 +187,7 @@ def _analyze(ctx: TaskContext, job: Job) -> dict:
         rematch(db, job, only_requirements=True)
     with ctx.step("Analyzing projects"):
         recommend_projects(db, job)
+        auto_supporting_project(db, job, settings)
     with ctx.step("Preparing recommendations"):
         _deadline_reminder(db, job, settings)
         job.analysis_state = "ready"
@@ -197,6 +198,34 @@ def _analyze(ctx: TaskContext, job: Job) -> dict:
                                     data={"to": "saved"}))
         db.commit()
     return {"job_id": job.id, "requirements": len(job.requirements)}
+
+
+def auto_supporting_project(db: Session, job: Job, settings: UserSettings | None) -> None:
+    """When the user's finished projects do not cover the job's required skills, prepare one supporting-project
+    plan automatically. It is an idea, not experience, and never appears on a resume."""
+    from app.llm.provider import get_provider
+    from app.models import JobMatch, SuggestedProject
+    from app.services.suggestions import coherent_gaps, deterministic_plan, llm_plan
+
+    if db.scalar(select(SuggestedProject.id).where(SuggestedProject.job_id == job.id)):
+        return
+    matches = {m.requirement_id: m.status for m in db.scalars(select(JobMatch).where(JobMatch.job_id == job.id))}
+    skills = [r for r in job.requirements if r.kind == "skill" and r.canonical and not r.canonical.startswith("x:")]
+    missing = [r.canonical for r in skills if r.importance == "required" and matches.get(r.id) == "missing"]
+    missing += [r.canonical for r in skills if r.importance == "preferred" and matches.get(r.id) == "missing"]
+    required = [r for r in skills if r.importance == "required"]
+    covered_by_projects = any(rec.matched for rec in job.project_recommendations)
+    if not missing or (covered_by_projects and not any(matches.get(r.id) == "missing" for r in required)):
+        return
+    gaps = coherent_gaps(list(dict.fromkeys(missing)))
+    anchors = [r.canonical for r in skills if matches.get(r.id) == "strong"][:3]
+    provider = get_provider(settings)
+    plan = llm_plan(provider, gaps, anchors, job.role_title, job.company, job.description_text[:4000]) if provider \
+        else None
+    plan = plan or deterministic_plan(gaps, anchors, job.role_title, job.company)
+    db.add(SuggestedProject(user_id=job.user_id, job_id=job.id, title=plan["title"][:200], gap_skills=gaps,
+                            existing_skills=anchors, status="idea", plan=plan, auto_generated=True))
+    db.commit()
 
 
 def _guess_company(text: str) -> str:

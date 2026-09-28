@@ -103,6 +103,20 @@ THANKS_PAGE = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE -->
 ERROR_PAGE = """<!doctype html><html><body><h1>Apply: Software Engineer</h1>
 <div role="alert" class="error">Please complete all required fields: %s</div></body></html>"""
 
+SPA_PAGE = """<!doctype html><html><head><title>Careers (mock SPA)</title>
+<meta property="og:site_name" content="Example Systems"></head><body><!-- LOCAL TEST FIXTURE -->
+<div id="app">Loading...</div>
+<script>
+  // A career site that builds the posting with JavaScript, and also tries to reach a cloud metadata address.
+  fetch('http://169.254.169.254/latest/meta-data/').then(() => { document.title = 'LEAKED'; }).catch(() => {});
+  setTimeout(() => {
+    document.getElementById('app').innerHTML = `<main class="job-description"><h1>Backend Developer</h1>
+      <h2>Requirements</h2><ul><li>Strong Python and SQL skills</li><li>Experience building REST APIs with FastAPI</li>
+      <li>Familiarity with Docker and PostgreSQL</li><li>Good understanding of data structures and algorithms</li></ul>
+      <h2>What you will do</h2><ul><li>Build and test backend services</li><li>Review code and write documentation</li></ul></main>`;
+  }, 300);
+</script></body></html>"""
+
 LOGIN_PAGE = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE -->
 <h1>Sign in to continue</h1><form><label>Email <input name="email" type="email"></label>
 <label>Password <input name="password" type="password"></label><button>Sign in</button></form></body></html>"""
@@ -169,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, APPLY_PAGE)
         if path == "/careers/ibm/applied/12345":
             return self._send(200, THANKS_PAGE)
+        if path == "/careers/spa-job/77":
+            return self._send(200, SPA_PAGE)
         if path == "/careers/login-required":
             return self._send(200, LOGIN_PAGE)
         if path == "/careers/captcha":

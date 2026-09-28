@@ -1,0 +1,37 @@
+# Render Blueprint for the CareerPilot API (Docker web service, free plan).
+# The database is Neon PostgreSQL; paste its connection string into DATABASE_URL when prompted.
+services:
+  - type: web
+    name: careerpilot-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL # Neon connection string (postgresql://...?sslmode=require)
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SECRET_ENCRYPTION_KEY # Fernet key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: ALLOW_REGISTRATION # closed once the owner account exists
+        value: "false"
+      - key: CORS_ORIGINS # the frontend origin; requests normally arrive same-origin through the Vercel rewrite
+        sync: false
+      - key: PUBLIC_WEB_URL
+        sync: false
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: LLM_MODEL
+        value: gemini-2.5-flash
+      - key: LLM_API_KEY # Google AI Studio key; set LLM_PROVIDER=none to run without a model
+        sync: false
+      - key: WORKER_THREADS
+        value: "2"

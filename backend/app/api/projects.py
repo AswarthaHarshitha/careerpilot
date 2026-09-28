@@ -22,6 +22,7 @@ from app.models import (
     User,
     UserSettings,
 )
+from app.services.assets import apply_classification
 from app.services.github_scan import slugify
 from app.services.suggestions import deterministic_plan, llm_plan
 from app.tasks.queue import enqueue
@@ -52,6 +53,8 @@ def project_out(p: Project, full: bool = False) -> dict:
         "last_scanned_at": p.last_scanned_at.isoformat() if p.last_scanned_at else None, "scan_error": p.scan_error,
         "technologies": list(tech.values())[:14], "evidence_counts": counts, "bullet_count": len(p.bullets),
         "topics": p.topics or [],
+        "asset_type": p.asset_type, "asset_type_locked": p.asset_type_locked, "resume_eligible": p.resume_eligible,
+        "status": p.status, "evidence_eligible": p.evidence_eligible,
     }
     if full:
         total = sum((p.languages or {}).values()) or 1
@@ -100,6 +103,7 @@ def create_manual_project(body: ProjectIn, user: User = Depends(current_user), d
         slug, n = f"{base}-{n}", n + 1
     p = Project(user_id=user.id, name=body.display_name, display_name=body.display_name, slug=slug, origin="manual",
                 description=body.description, homepage_url=body.homepage_url, repo_url=body.repo_url)
+    apply_classification(p)
     db.add(p)
     db.commit()
     return project_out(_owned(db, user.id, p.id), full=True)
@@ -110,13 +114,22 @@ class ProjectPatch(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     homepage_url: str | None = Field(default=None, max_length=300)
     hidden: bool | None = None
+    resume_eligible: bool | None = None  # "Exclude from Resume Intelligence" when False
+    asset_type: Literal["project", "personal_profile"] | None = None
+    status: Literal["idea", "planned", "building", "built", "verified", "deployed"] | None = None
 
 
 @router.patch("/projects/{pid}")
 def update_project(pid: int, body: ProjectPatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _owned(db, user.id, pid)
-    for k, v in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    if p.asset_type_locked and (data.get("asset_type") == "project" or data.get("resume_eligible") is True):
+        raise AppError("This is your portfolio/profile. It can only be used as a header link, never as a project.",
+                       code="profile_asset_locked")
+    for k, v in data.items():
         setattr(p, k, v.strip() if isinstance(v, str) else v)
+    if p.asset_type == "personal_profile":
+        p.resume_eligible = False
     db.commit()
     return project_out(p, full=True)
 
@@ -235,7 +248,8 @@ def suggestion_out(s: SuggestedProject) -> dict:
     return {"id": s.id, "title": s.title, "job_id": s.job_id, "gap_skills": [display_name(k) for k in s.gap_skills],
             "gap_keys": s.gap_skills, "existing_skills": [display_name(k) for k in s.existing_skills],
             "status": s.status, "plan": s.plan, "linked_project_id": s.linked_project_id,
-            "verification_notes": s.verification_notes, "created_at": s.created_at.isoformat()}
+            "verification_notes": s.verification_notes, "verification": s.verification or [],
+            "auto_generated": s.auto_generated, "created_at": s.created_at.isoformat()}
 
 
 class SuggestIn(BaseModel):
@@ -259,7 +273,7 @@ def suggest(job_id: int, body: SuggestIn, user: User = Depends(current_user), db
         plan = llm_plan(provider, gaps, anchors, job.role_title, job.company, job.description_text[:4000])
     plan = plan or deterministic_plan(gaps, anchors, job.role_title, job.company)
     s = SuggestedProject(user_id=user.id, job_id=job.id, title=plan["title"][:200], gap_skills=gaps,
-                         existing_skills=anchors, status="not_built", plan=plan)
+                         existing_skills=anchors, status="idea", plan=plan)
     db.add(s)
     db.commit()
     return suggestion_out(s)
@@ -284,7 +298,7 @@ def get_suggestion(sid: int, user: User = Depends(current_user), db: Session = D
 
 
 class SuggestionPatch(BaseModel):
-    status: Literal["not_built", "in_progress"]
+    status: Literal["idea", "planned", "building"]
 
 
 @router.patch("/suggested-projects/{sid}")
@@ -311,7 +325,7 @@ def link_suggestion(sid: int, body: RepoIn, user: User = Depends(current_user), 
         db.add(existing)
         db.flush()
     s.linked_project_id = existing.id
-    s.status = "in_progress"
+    s.status = "building"
     s.verification_notes = "Scanning the repository..."
     db.commit()
     task = enqueue(db, user.id, "github_scan_repo", {"full_name": full},

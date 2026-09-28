@@ -22,7 +22,9 @@ def escape(text: str) -> str:
     """Escapes plain text for insertion into LaTeX. Generated content always passes through here."""
     text = (text or "").replace("\r", "")
     text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
-    return _ESCAPE_RX.sub(lambda m: _ESCAPES[m.group()], text)
+    out = _ESCAPE_RX.sub(lambda m: _ESCAPES[m.group()], text)
+    # LaTeX's own dashes render in every font encoding; the Unicode characters may not
+    return out.replace("\u2014", "---").replace("\u2013", "--")
 
 
 def escape_url(url: str) -> str:
@@ -148,11 +150,15 @@ def iter_macros(src: str, start: int = 0, end: int | None = None, mask: list[boo
         yield MacroCall(m.group(1), m.start(), m.end(), args, after)
 
 
+# Commands whose arguments are layout, not text (dropped with their argument).
 _TEXT_DROP = re.compile(
-    r"\\(?:vspace|hspace|setlength|addtolength|fontsize|color|textcolor|raisebox|rule|includegraphics|"
-    r"label|ref|cite|newline|linebreak|hfill|vfill|small|large|Large|LARGE|huge|Huge|scriptsize|footnotesize|"
-    r"normalsize|tiny|scshape|bfseries|itshape|centering|raggedright|raggedleft|noindent|par|quad|qquad)\*?"
-    r"(?:\[[^\]]*\])?(?:\{[^{}]*\})?"
+    r"\\(?:vspace|hspace|setlength|addtolength|fontsize|color|rule|includegraphics|label|ref|cite|pagestyle|"
+    r"thispagestyle|raisebox|definecolor|hypersetup)\*?(?:\[[^\]]*\])?(?:\{(?:[^{}]|\{[^{}]*\})*\})?(?:\{[^{}]*\})?"
+)
+# Switches that only change appearance; the text that follows (or their braced argument) is kept.
+_SWITCHES = re.compile(
+    r"\\(?:newline|linebreak|hfill|vfill|small|large|Large|LARGE|huge|Huge|scriptsize|footnotesize|normalsize|tiny|"
+    r"scshape|bfseries|itshape|centering|raggedright|raggedleft|noindent|par|quad|qquad|selectfont)\b\*?"
 )
 _ICON_RX = re.compile(r"\\fa[A-Za-z]+\*?|\\(?:faicon|icon)\{[^{}]*\}|\\(?:Mobilefone|Letter|Email|Telefon)\b")
 
@@ -161,10 +167,12 @@ def to_plain(tex: str) -> str:
     """Best-effort conversion of a LaTeX fragment to readable plain text (for analysis and display)."""
     s = strip_comments(tex)
     s = _ICON_RX.sub(" ", s)
-    s = re.sub(r"\\(?:begin|end)\{[^{}]*\}(?:\[[^\]]*\])?(?:\{[^{}]*\})*", " ", s)
+    s = re.sub(r"\\(?:begin|end)\{[^{}]*\}(?:\[[^\]]*\])?(?:\{(?:[^{}]|\{[^{}]*\})*\})*", " ", s)
+    s = re.sub(r"\\multicolumn\{[^{}]*\}\{(?:[^{}]|\{[^{}]*\})*\}", " ", s)
     s = re.sub(r"\\href\{[^{}]*\}\{((?:[^{}]|\{[^{}]*\})*)\}", r"\1", s)
     s = re.sub(r"\\url\{([^{}]*)\}", r"\1", s)
     s = _TEXT_DROP.sub(" ", s)
+    s = _SWITCHES.sub(" ", s)
     s = s.replace("\\\\", "\n")
     s = s.replace("\\ ", " ")
     s = re.sub(r"\$\|\$|\$\\vert\$|\\textbar\{?\}?", "|", s)

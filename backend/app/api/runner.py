@@ -97,9 +97,10 @@ def resume_pdf(sid: int, runner=Depends(current_runner), db: Session = Depends(g
     rv = db.get(ResumeVersion, s.resume_version_id) if s.resume_version_id else None
     if rv is None or rv.user_id != user.id or rv.pdf is None:
         raise AppError("No resume PDF for this session.", code="no_pdf", status_code=404)
-    job = db.get(Job, db.get(Application, s.application_id).job_id)
-    import re
+    if rv.export_blocked:
+        raise AppError("This resume has failing checks and can't be uploaded.", code="export_blocked", status_code=409)
+    from app.services.naming import resume_filename
 
-    who = re.sub(r"[^A-Za-z0-9]+", "_", (job.company if job else "") or "Resume").strip("_")
+    fname = resume_filename(db, rv, "pdf")
     return Response(rv.pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="Resume_{who}.pdf"'})
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})

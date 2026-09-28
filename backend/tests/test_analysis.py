@@ -157,3 +157,34 @@ def test_project_ranking_prefers_verified_required_evidence():
     scores = score_projects(_reqs(), _profile())
     assert scores[0].project_id == 10
     assert all(s.project_id != 11 for s in scores)  # React is not asked for
+
+
+def test_oracle_recruiting_cloud_postings_are_read_from_the_job_api(monkeypatch):
+    import json as _json
+
+    from app.core.fetch import FetchResult
+    from app.jobs import platforms
+
+    page = ('<html><head><meta property="og:site_name" content="Acme Corp"/></head><body>'
+            '<base href="/en/sites/jobsearch" data-apibaseurl="https://acme.fa.us2.oraclecloud.com:443">'
+            '<link href="https://acme.fa.us2.oraclecloud.com/hcmRestApi/CandidateExperience/x.png?siteNumber=CX_45001">'
+            "<script>/* CandidateExperience */</script></body></html>")
+    api = {"items": [{"Id": "344317", "Title": "Application Software Engineer 1", "PrimaryLocation": "Bengaluru, India",
+                      "ExternalDescriptionStr": "<p>Build software with Java and SQL.</p>" * 5,
+                      "ExternalResponsibilitiesStr": "<ul><li>Develop reports using SQL</li></ul>",
+                      "ExternalQualificationsStr": "", "ExternalPostedEndDate": None}]}
+    seen = []
+
+    def fake_fetch(url, **kw):
+        seen.append(url)
+        if "hcmRestApi/resources" in url:
+            return FetchResult(url, 200, "application/json", _json.dumps(api).encode(), {})
+        return FetchResult(url, 200, "text/html", page.encode(), {})
+
+    monkeypatch.setattr(platforms, "fetch", fake_fetch)
+    p = platforms.fetch_posting("https://careers.acme.com/en/sites/jobsearch/job/344317?keyword=engineer")
+    assert (p.platform, p.company, p.title, p.job_code) == ("oracle", "Acme Corp", "Application Software Engineer 1",
+                                                            "344317")
+    assert 'Id="344317",siteNumber=CX_45001' in seen[1] and seen[1].startswith("https://acme.fa.us2.oraclecloud.com")
+    assert "Develop reports using SQL" in p.description_text
+    assert p.deadline is None  # no end date in the data, so none is invented

@@ -35,6 +35,30 @@ class JobUrlIn(BaseModel):
     careers_url: str = Field(default="", max_length=2000)
     application_url: str = Field(default="", max_length=2000)
     job_code: str = Field(default="", max_length=120)
+    resume_instructions: "InstructionsIn | None" = None
+    notes: str = Field(default="", max_length=10_000)
+
+
+class InstructionsIn(BaseModel):
+    controls: dict = Field(default_factory=dict)
+    custom: list[str] = Field(default_factory=list, max_length=40)
+
+    def clean(self) -> dict:
+        allowed = {"portfolio": ("default", "include", "exclude"), "github": ("default", "include", "exclude"),
+                   "linkedin": ("default", "include", "exclude"), "length": ("default", 1, 2, "1", "2"),
+                   "projects": ("auto", 2, 3, 4, "2", "3", "4"), "summary": ("auto", "include", "exclude"),
+                   "certifications": ("auto", "include", "exclude")}
+        controls = {}
+        for k, v in (self.controls or {}).items():
+            if k == "template_id" and (v is None or isinstance(v, int)):
+                controls[k] = v
+            elif k in allowed and v in allowed[k]:
+                controls[k] = int(v) if isinstance(v, str) and v.isdigit() else v
+        custom = [c.strip()[:500] for c in self.custom if isinstance(c, str) and c.strip()]
+        return {"controls": controls, "custom": custom}
+
+
+JobUrlIn.model_rebuild()
 
 
 def job_summary(j: Job, app_row: Application | None = None, counts: dict | None = None) -> dict:
@@ -83,18 +107,31 @@ def import_job(body: JobUrlIn, request: Request, user: User = Depends(current_us
         raise AppError("Paste a job URL or the job description.", code="missing_input")
     if body.job_code:
         job.job_code = body.job_code.strip()
-        db.commit()
+    if body.resume_instructions:
+        job.resume_instructions = body.resume_instructions.clean()
+    job.notes = body.notes.strip()
+    db.commit()
     return {"job": job_summary(job), "task_id": task_id}
 
 
 @router.post("/pdf")
 async def import_pdf(file: UploadFile = File(...), company: str = Form(default=""), role_title: str = Form(default=""),
-                     application_url: str = Form(default=""), user: User = Depends(current_user),
+                     application_url: str = Form(default=""), instructions: str = Form(default=""),
+                     notes: str = Form(default=""), user: User = Depends(current_user),
                      db: Session = Depends(get_db)):
+    import json as _json
+
     data = await read_upload(file, 5_000_000)
     text = svc.text_from_pdf(data)
     job, task_id = svc.create_job_from_text(db, user.id, text, company=company, role=role_title,
                                             application_url=application_url.strip(), method="pdf")
+    if instructions:
+        try:
+            job.resume_instructions = InstructionsIn(**_json.loads(instructions)).clean()
+        except (ValueError, TypeError) as exc:
+            raise AppError("The resume instructions could not be read.", code="invalid_instructions") from exc
+    job.notes = notes.strip()[:10_000]
+    db.commit()
     return {"job": job_summary(job), "task_id": task_id}
 
 
@@ -147,9 +184,31 @@ def get_job(job_id: int, user: User = Depends(current_user), db: Session = Depen
         "ingest_method": j.ingest_method, "requirements": reqs, "recommended_projects": recs,
         "resumes": [{"id": v.id, "label": v.label, "version_number": v.version_number, "status": v.status,
                      "created_at": v.created_at.isoformat(), "page_count": v.page_count} for v in resumes],
-        "suggested_projects": [{"id": s.id, "title": s.title, "status": s.status} for s in suggestions],
+        "suggested_projects": [{"id": s.id, "title": s.title, "status": s.status, "auto_generated": s.auto_generated}
+                               for s in suggestions],
+        "resume_instructions": j.resume_instructions or {"controls": {}, "custom": []},
+        "notes": j.notes,
+        "resume_config": _config_preview(db, j, user.id),
     })
     return out
+
+
+def _config_preview(db: Session, j: Job, user_id: int) -> dict | None:
+    from app.core.errors import AppError as _AppError
+    from app.models import UserSettings
+    from app.services.resumes import job_config, resolve_template
+
+    settings = db.get(UserSettings, user_id)
+    try:
+        tpl = resolve_template(db, user_id, j, None)
+    except _AppError:
+        tpl = None
+    cfg = job_config(db, j, tpl, settings)
+    return {"template": tpl.name if tpl else None, "template_id": tpl.id if tpl else None,
+            "length": cfg["length"], "projects": cfg["projects"], "links": cfg["links"], "summary": cfg["summary"],
+            "certifications": cfg["certifications"], "custom_count": cfg["custom_count"],
+            "instructions": cfg["summary_lines"], "conflicts": cfg["conflicts"], "unrecognized": cfg["unrecognized"],
+            "ambiguous": cfg["ambiguous"], "applied": cfg["applied"]}
 
 
 class JobPatch(BaseModel):
@@ -161,6 +220,8 @@ class JobPatch(BaseModel):
     deadline: date | None = None
     clear_deadline: bool = False
     archived: bool | None = None
+    resume_instructions: InstructionsIn | None = None
+    notes: str | None = Field(default=None, max_length=10_000)
 
     @field_validator("application_url")
     @classmethod
@@ -171,7 +232,9 @@ class JobPatch(BaseModel):
 @router.patch("/{job_id}")
 def update_job(job_id: int, body: JobPatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
     j = _owned(db, user.id, job_id)
-    data = body.model_dump(exclude_none=True, exclude={"clear_deadline", "deadline"})
+    data = body.model_dump(exclude_none=True, exclude={"clear_deadline", "deadline", "resume_instructions"})
+    if body.resume_instructions is not None:
+        j.resume_instructions = body.resume_instructions.clean()
     for k, v in data.items():
         setattr(j, k, v.strip() if isinstance(v, str) else v)
     if body.clear_deadline:
@@ -230,3 +293,21 @@ def archive_job(job_id: int, user: User = Depends(current_user), db: Session = D
     j.archived = True
     db.commit()
     return {"ok": True}
+
+
+class ParseIn(BaseModel):
+    text: str = Field(max_length=5000)
+    job_id: int | None = None
+
+
+@router.post("/instructions/parse")
+def parse_instructions(body: ParseIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Shows how free-text instructions will be interpreted, before they are saved or applied."""
+    from app.resume.instructions import parse, split_lines
+    from app.services.resumes import eligible_project_names
+
+    interp = parse(split_lines(body.text), eligible_project_names(db, user.id))
+    return {"applied": interp.applied, "controls": interp.controls, "project_priority": interp.project_priority,
+            "emphasis": interp.emphasis, "flags": sorted(interp.flags), "conflicts": interp.conflicts,
+            "unrecognized": interp.unrecognized, "ambiguous": interp.ambiguous,
+            "lines": split_lines(body.text)}

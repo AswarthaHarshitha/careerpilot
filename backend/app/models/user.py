@@ -78,6 +78,10 @@ class UserSettings(Base):
     include_forks: Mapped[bool] = mapped_column(Boolean, default=False)
     github_last_scan_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
+    # Master defaults for resume header links: "template" keeps what the template has, or "include"/"exclude".
+    header_portfolio: Mapped[str] = mapped_column(String(10), default="template")
+    header_github: Mapped[str] = mapped_column(String(10), default="template")
+    header_linkedin: Mapped[str] = mapped_column(String(10), default="template")
     notify_in_app: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str] = mapped_column(Text, default="")
 

@@ -192,3 +192,20 @@ def test_runner_cannot_report_submission_without_confirmation(auth_client, clien
     r = client.post(f"/api/runner/sessions/{sid}/report", json={"state": "submitted"}, headers=headers)
     assert r.status_code == 409 and r.json()["error"]["code"] == "submit_not_confirmed"
     assert auth_client.get(f"/api/applications/{a.id}").json()["status"] == "in_progress"
+
+
+def test_javascript_career_pages_are_rendered_in_a_sandbox(site):
+    from app.jobs.platforms import fetch_posting
+
+    post = fetch_posting(site.base + "/careers/spa-job/77")
+    assert post.title == "Backend Developer" and post.company == "Example Systems"
+    assert "FastAPI" in post.description_text
+    assert any("JavaScript" in n for n in post.notes)
+
+
+def test_rendered_pages_cannot_reach_private_addresses(site):
+    from app.jobs.render import render_page
+
+    html, _ = render_page(site.base + "/careers/spa-job/77")
+    assert "<title>LEAKED</title>" not in html  # the metadata request was aborted by the request guard
+    assert "<title>Careers (mock SPA)</title>" in html

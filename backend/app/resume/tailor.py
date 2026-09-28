@@ -60,6 +60,8 @@ class TailorInputs:
     strong_skills: set[str]  # JD skills with claimable evidence (from matching)
     profile_summary: str
     max_bullets_per_project: int = 3
+    config: dict = field(default_factory=dict)  # effective job instructions (app.resume.instructions)
+    guidance: list[str] = field(default_factory=list)  # free-text preferences from the user for the model
 
 
 def relevance(text: str, focus: JobFocus) -> float:
@@ -105,7 +107,11 @@ def _clean_description(desc: str) -> str:
     d = re.split(r"\s+[-\u2013\u2014]\s+|;\s+|\.\s+", d, maxsplit=1)[0]
     d = d.replace(": ", " with ", 1) if ": " in d else d
     words = d.split()
-    return " ".join(words[:24]) if words else ""
+    if len(words) > 24:  # cut at the last clause boundary within the limit, never mid-phrase
+        clipped = " ".join(words[:24])
+        cut = max(clipped.rfind(","), clipped.rfind(" and "))
+        d = clipped[:cut] if cut > 40 else clipped
+    return d.strip(" ,") if words else ""
 
 
 def evidence_bullets(p: ProjectInput, focus: JobFocus) -> list[str]:
@@ -118,7 +124,7 @@ def evidence_bullets(p: ProjectInput, focus: JobFocus) -> list[str]:
     if desc and not re.search(r"\byou(r|rs)?\b", desc, re.I):
         lead = desc[0].lower() + desc[1:]
         article = "" if re.match(r"(a|an|the)\s", lead) else ("an " if lead[:1] in "aeiou" else "a ")
-        out.append(f"Built {p.title}, {article}{lead}{using}.")
+        out.append(f"Built {article}{lead}{using}.")
     elif tech:
         out.append(f"Built {p.title}{using}.")
     for f in sorted(p.features, key=lambda f: -relevance(f, focus))[:2]:
@@ -154,27 +160,89 @@ CATEGORY_HINTS = [
 ]
 
 
+TECH_TEXT = re.compile(r"^\s*(\*\*)?\s*(technologies|tech stack|tools|stack|built with)\s*:?(\*\*)?\s*:?", re.I)
+
+
+def _tech_bullet(line: str, focus: "JobFocus") -> dict:
+    """The "Technologies:" line: kept last, never reworded; its items reordered by relevance to the job."""
+    m = TECH_TEXT.match(line)
+    label = re.sub(r"[*:]", "", m.group(0)).strip() if m else "Technologies"
+    items = [x.strip().rstrip(".") for x in re.split(r",\s*", line[m.end():] if m else line) if x.strip()]
+    items.sort(key=lambda t: -relevance(t, focus))
+    text = f"**{label}:** " + ", ".join(items) + "."
+    return {"text": text, "original": text, "origin": "profile", "tech_line": True}
+
+
+CERT_ITEM = re.compile(r"certif|certificate|licen[cs]e|\bcertified\b", re.I)
+
+
+def apply_emphasis(focus: JobFocus, emphasis: dict[str, float]) -> JobFocus:
+    """Job instructions such as "emphasize backend" / "don't emphasize frontend" reweight what counts as relevant."""
+    from app.resume.instructions import EMPHASIS_AREAS
+
+    if not emphasis:
+        return focus
+    weights = dict(focus.weights)
+    for area, w in emphasis.items():
+        cats = set(EMPHASIS_AREAS.get(area, ()))
+        for key, sk in SKILLS.items():
+            if sk.category not in cats:
+                continue
+            if w > 0:
+                weights[key] = weights.get(key, 0.0) * 1.6 + 0.6
+            else:
+                weights[key] = 0.0
+    ordered = sorted(dict.fromkeys(focus.ordered), key=lambda k: -weights.get(k, 0))
+    return JobFocus(weights, ordered, focus.role, focus.company)
+
+
+def order_projects(projects: list["ProjectInput"], priority: list[str], limit: int) -> list["ProjectInput"]:
+    def rank(p: "ProjectInput") -> int:
+        for i, name in enumerate(priority):
+            if _norm(name) and (_norm(name) in _norm(p.title) or _norm(p.title) in _norm(name)):
+                return i
+        return len(priority)
+
+    ordered = sorted(projects, key=lambda p: (rank(p), -p.score))
+    return ordered[: max(1, limit)] if limit else ordered
+
+
 def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[dict, list[dict]]:
-    focus = inputs.focus
+    cfg = inputs.config or {}
+    focus = apply_emphasis(inputs.focus, cfg.get("emphasis") or {})
+    flags = set(cfg.get("flags") or [])
     changes: list[dict] = []
     sections_out = []
     rewrite_jobs: list[dict] = []  # bullets and summary eligible for model rewording
+    if cfg:
+        inputs.projects = order_projects(inputs.projects, cfg.get("project_priority") or [], cfg.get("projects") or 0)
 
     for sec in inputs.structure["sections"]:
         kind, layout = sec["kind"], sec["layout"]
         base = {"index": sec["index"], "title": sec["title"], "kind": kind, "layout": layout}
 
+        if kind in ("summary", "certifications") and cfg.get(kind) == "exclude":
+            base["removed"] = True
+            changes.append({"section": sec["title"], "type": "removed", "detail": f"Removed {sec['title']} (your "
+                            "instruction for this job)"})
+            sections_out.append(base)
+            continue
+
         if kind == "summary" and layout == "paragraph":
             original = sec["paragraph"]["text"]
             base.update({"text": original, "original_text": original})
-            rewrite_jobs.append({"type": "summary", "section": base, "source": original + "\n" + inputs.profile_summary})
+            if "keep_original_summary" not in flags:
+                rewrite_jobs.append({"type": "summary", "section": base,
+                                     "source": original + "\n" + inputs.profile_summary})
             sections_out.append(base)
 
         elif kind == "experience" and layout == "entries":
             entries = []
             for i, e in enumerate(sec["entries"]):
                 exp = _find_experience(inputs.experiences, e["fields"])
-                bullets = exp.bullets if exp and exp.bullets else [it["text"] for it in e["items"]]
+                all_bullets = exp.bullets if exp and exp.bullets else [it["text"] for it in e["items"]]
+                tech = next((b for b in all_bullets if TECH_TEXT.match(b)), None)
+                bullets = [b for b in all_bullets if not TECH_TEXT.match(b)]
                 if not bullets:
                     entries.append({"source_index": i, "fields": e["fields"], "bullets": None,
                                     "ref": {"type": "experience", "id": exp.id} if exp else None})
@@ -183,11 +251,15 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
                 entry = {"source_index": i, "fields": e["fields"],
                          "ref": {"type": "experience", "id": exp.id} if exp else None,
                          "bullets": [{"text": b, "original": b, "origin": "profile"} for b in ordered]}
+                if tech:
+                    entry["bullets"].append(_tech_bullet(tech, focus))
                 if ordered != bullets:
                     changes.append({"section": sec["title"], "type": "reordered",
                                     "detail": f"Put the most relevant bullets first for {e['fields'].get('primary', '')}"})
                 allowed = allowed_skills_for(bullets, set())
                 for b in entry["bullets"]:
+                    if b.get("tech_line"):
+                        continue
                     rewrite_jobs.append({"type": "bullet", "bullet": b, "source": "\n".join(bullets),
                                          "allowed": allowed, "context": e["fields"].get("primary", "")})
                 entries.append(entry)
@@ -203,12 +275,19 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
                     idx = None
                 if idx is not None:
                     used_template.add(idx)
+                tech_line = None
+                template_items = sec["entries"][idx]["items"] if idx is not None else []
                 if p.bullets:
-                    pool = [(b, "profile") for b in p.bullets]
-                elif idx is not None and sec["entries"][idx]["items"]:
-                    pool = [(it["text"], "template") for it in sec["entries"][idx]["items"]]
+                    pool = [(b, "profile") for b in p.bullets if not TECH_TEXT.match(b)]
+                    tech_line = next((b for b in p.bullets if TECH_TEXT.match(b)), None)
+                elif template_items:
+                    pool = [(it["text"], "template") for it in template_items if not it.get("tech_line")]
+                    tech_line = next((it["text"] for it in template_items if it.get("tech_line")), None)
                 else:
                     pool = [(b, "evidence") for b in evidence_bullets(p, focus)]
+                uses_tech_lines = any(it.get("tech_line") for e2 in sec["entries"] for it in e2["items"])
+                if uses_tech_lines and not tech_line and p.tech:
+                    tech_line = "Technologies: " + ", ".join(p.tech[:6])  # only verified technologies
                 if not pool:
                     continue
                 ranked = sorted(pool, key=lambda bo: -relevance(bo[0], focus))
@@ -221,9 +300,13 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
                 entry = {"source_index": idx, "fields": fields, "ref": {"type": "project", "id": p.id},
                          "matched": p.matched[:8],
                          "bullets": [{"text": b, "original": b, "origin": o} for b, o in keep]}
+                if tech_line:
+                    entry["bullets"].append(_tech_bullet(tech_line, focus))
                 allowed = p.claimable | allowed_skills_for([b for b, _ in pool], set())
                 source = "\n".join([p.description] + [b for b, _ in pool] + p.features)
                 for b in entry["bullets"]:
+                    if b.get("tech_line"):
+                        continue
                     rewrite_jobs.append({"type": "bullet", "bullet": b, "source": source, "allowed": allowed,
                                          "context": p.title})
                 entries.append(entry)
@@ -246,16 +329,27 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
             sections_out.append(base)
 
         elif layout == "skills":
-            cats, skill_changes = _tailor_skills(sec["skills"], inputs, focus)
+            cats, skill_changes = _tailor_skills(sec["skills"], inputs, focus, "relevant_skills_only" in flags)
             base["categories"] = cats
             changes += [{"section": sec["title"], **c} for c in skill_changes]
             sections_out.append(base)
 
         elif layout == "items":
             items = [it["text"] for it in sec["items"]]
+            if cfg.get("certifications") == "exclude":
+                kept = [t for t in items if not CERT_ITEM.search(t)]
+                if len(kept) < len(items):
+                    changes.append({"section": sec["title"], "type": "removed",
+                                    "detail": f"Removed {len(items) - len(kept)} certification item(s) (your instruction)"})
+                if not kept:
+                    base["removed"] = True
+                    sections_out.append(base)
+                    continue
+                items = kept
             ordered = sorted(items, key=lambda t: -relevance(t, focus))
             base["items"] = ordered
-            if ordered != items:
+            base["items_unchanged"] = ordered == [it["text"] for it in sec["items"]]
+            if ordered != [it["text"] for it in sec["items"]] and len(ordered) == len(sec["items"]):
                 changes.append({"section": sec["title"], "type": "reordered", "detail": "Most relevant items first"})
             sections_out.append(base)
         else:
@@ -264,7 +358,8 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
 
     used_llm = False
     if provider is not None and rewrite_jobs:
-        used_llm = _llm_rewrite(provider, rewrite_jobs, focus, changes)
+        used_llm = _llm_rewrite(provider, rewrite_jobs, focus, changes, guidance=inputs.guidance,
+                                concise_summary="concise_summary" in flags)
 
     content = {"sections": sections_out, "focus": focus.ordered[:15], "used_llm": used_llm}
     return content, changes
@@ -279,7 +374,8 @@ def _find_experience(exps: list[ExperienceInput], fields: dict) -> ExperienceInp
     return None
 
 
-def _tailor_skills(categories: list[dict], inputs: TailorInputs, focus: JobFocus) -> tuple[list[dict], list[dict]]:
+def _tailor_skills(categories: list[dict], inputs: TailorInputs, focus: JobFocus,
+                   relevant_only: bool = False) -> tuple[list[dict], list[dict]]:
     changes = []
     out = []
     listed_keys = set()
@@ -311,6 +407,12 @@ def _tailor_skills(categories: list[dict], inputs: TailorInputs, focus: JobFocus
             added.append(display_name(k))
             placed.add(k)
         new_items = ordered + added
+        if relevant_only:
+            keep = [it for it in new_items if score(it) > 0] or new_items[:1]
+            if len(keep) < len(new_items):
+                changes.append({"type": "removed", "detail": f"{c['name']}: left out {len(new_items) - len(keep)} "
+                                                             "skill(s) not relevant to this job (your instruction)"})
+            new_items = keep
         if ordered != items:
             moved = [it for it in ordered[:3] if score(it) > 0]
             if moved:
@@ -324,14 +426,20 @@ def _tailor_skills(categories: list[dict], inputs: TailorInputs, focus: JobFocus
 
 LLM_SYSTEM = (
     "You tailor resume wording for one job. For each item, rewrite it to emphasise what matters for the job, "
-    "keeping every fact identical. Rules: do not add technologies, numbers, users, customers, scale, impact, "
-    "leadership or awards that the original does not state; keep each bullet under 30 words; start bullets with a "
-    "strong past-tense verb; no first person. If an item cannot be improved, return it unchanged. "
+    "keeping every fact identical. Write like an engineer describing their own work: action + what was built or "
+    "done + technology or method + a result only if the original states one. Rules: do not add technologies, "
+    "numbers, users, customers, scale, impact, leadership or awards that the original does not state; keep each "
+    "bullet under 30 words; start bullets with a specific past-tense verb and vary the verbs; no first person; no "
+    "marketing language or filler such as leveraged, cutting-edge, spearheaded, harnessed, seamlessly, robust, "
+    "innovative, passionate, results-driven, state-of-the-art, pivotal, utilized, synergy; do not copy sentences "
+    "from the job description; do not repeat a keyword just to include it. If an item cannot be improved, return "
+    "it unchanged. "
     'Return JSON: {"items": {"<id>": "<rewritten text>"}}'
 )
 
 
-def _llm_rewrite(provider: LLMProvider, jobs: list[dict], focus: JobFocus, changes: list[dict]) -> bool:
+def _llm_rewrite(provider: LLMProvider, jobs: list[dict], focus: JobFocus, changes: list[dict], *,
+                 guidance: list[str] | None = None, concise_summary: bool = False, fix_notes: str = "") -> bool:
     items = {}
     for n, job in enumerate(jobs):
         key = f"i{n}"
@@ -341,9 +449,17 @@ def _llm_rewrite(provider: LLMProvider, jobs: list[dict], focus: JobFocus, chang
         else:
             items[key] = {"kind": "bullet", "entry": job["context"], "text": job["bullet"]["text"]}
     focus_names = ", ".join(display_name(k) for k in focus.ordered[:15])
+    extra = ""
+    if guidance:
+        extra += ("The candidate's preferences for this application (style and emphasis only; they never permit new "
+                  "facts):\n" + wrap_untrusted("PREFERENCES", "\n".join(guidance), 2000) + "\n")
+    if concise_summary:
+        extra += "Keep the summary to at most two short sentences.\n"
+    if fix_notes:
+        extra += f"Fix these problems in the items: {fix_notes}\n"
     prompt = (
         f"Target role: {focus.role or 'not stated'} at {focus.company or 'the company'}.\n"
-        f"Skills the job emphasises (in order): {focus_names}.\n\n"
+        f"Skills the job emphasises (in order): {focus_names}.\n" + extra + "\n"
         "Items to rewrite (JSON):\n" + wrap_untrusted("RESUME ITEMS", _json(items), 20_000)
     )
     try:
@@ -399,10 +515,40 @@ def _json(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=1)
 
 
+def removed_sections(content: dict) -> list[int]:
+    return [s["index"] for s in content["sections"] if s.get("removed")]
+
+
+def section_titles(content: dict) -> dict[int, str]:
+    return {s["index"]: s["title_text"] for s in content["sections"] if s.get("title_text")}
+
+
+def polish(content: dict, provider: LLMProvider, flagged: list[str], changes: list[dict]) -> int:
+    """Rewrites only the bullets the quality check flagged (generic wording, first person, tense), from their own
+    source text, under the same truth checks. Returns how many were improved."""
+    jobs = []
+    for sec in content["sections"]:
+        if sec.get("removed"):
+            continue
+        for e in sec.get("entries") or []:
+            for b in e.get("bullets") or []:
+                if b["text"] in flagged and b.get("origin") not in ("user",):
+                    source = b.get("original", "") + "\n" + b["text"]
+                    jobs.append({"type": "bullet", "bullet": b, "source": source,
+                                 "allowed": allowed_skills_for([source], set()),
+                                 "context": e.get("fields", {}).get("primary", "")})
+    if not jobs:
+        return 0
+    before = [j["bullet"]["text"] for j in jobs]
+    _llm_rewrite(provider, jobs, JobFocus({}, []), changes,
+                 fix_notes="remove generic or inflated wording, first person and present tense; keep every fact")
+    return sum(1 for j, old in zip(jobs, before, strict=True) if j["bullet"]["text"] != old)
+
+
 def to_render_instructions(content: dict) -> list[dict]:
     out = []
     for sec in content["sections"]:
-        if sec.get("unchanged"):
+        if sec.get("unchanged") or sec.get("removed"):
             continue
         ins = {"index": sec["index"]}
         if sec["layout"] == "paragraph":
@@ -410,38 +556,54 @@ def to_render_instructions(content: dict) -> list[dict]:
         elif sec["layout"] == "entries":
             ins["entries"] = [
                 {"source_index": e.get("source_index"), "fields": e.get("fields", {}),
+                 "rewrite_heading": bool(e.get("rewrite_heading")),
                  "bullets": None if e.get("bullets") is None else [b["text"] for b in e["bullets"]]}
                 for e in sec["entries"]
             ]
         elif sec["layout"] == "skills":
             ins["categories"] = [{"name": c["name"], "items": c["items"]} for c in sec["categories"]]
+        elif sec["layout"] == "entries" and not sec.get("entries"):
+            continue
         elif sec["layout"] == "items":
+            if sec.get("items_unchanged"):
+                continue
             ins["items"] = sec["items"]
         out.append(ins)
     return out
 
 
-def trim_for_length(content: dict, step: int) -> str | None:
+def _content_bullets(e: dict) -> int:
+    return sum(1 for b in e.get("bullets") or [] if not b.get("tech_line"))
+
+
+def _pop_content_bullet(e: dict) -> dict:
+    for i in range(len(e["bullets"]) - 1, -1, -1):
+        if not e["bullets"][i].get("tech_line"):
+            return e["bullets"].pop(i)
+    return e["bullets"].pop()
+
+
+def trim_for_length(content: dict, step: int, keep_projects: int = 0) -> str | None:
     """Removes the least relevant content, one step at a time. Returns a description, or None when nothing more
     can be removed without dropping whole sections."""
     projects = next((s for s in content["sections"] if s["kind"] == "projects" and s.get("entries")), None)
     exps = [s for s in content["sections"] if s["kind"] == "experience" and s.get("entries")]
     if projects:
         for e in reversed(projects["entries"]):
-            if e.get("bullets") and len(e["bullets"]) > 2:
-                removed = e["bullets"].pop()
+            if e.get("bullets") and _content_bullets(e) > 2:
+                removed = _pop_content_bullet(e)
                 return f"Removed a bullet from {e['fields'].get('primary', 'a project')}: \"{removed['text'][:60]}...\""
-        if len(projects["entries"]) > 2:
+        if len(projects["entries"]) > max(2, keep_projects):
             e = projects["entries"].pop()
             return f"Removed project {e['fields'].get('primary', '')} to fit the page limit"
     for s in exps:
         for e in s["entries"]:
-            if e.get("bullets") and len(e["bullets"]) > 2:
-                removed = e["bullets"].pop()
+            if e.get("bullets") and _content_bullets(e) > 2:
+                removed = _pop_content_bullet(e)
                 return f"Removed a bullet from {e['fields'].get('primary', '')}: \"{removed['text'][:60]}...\""
     if projects:
         for e in reversed(projects["entries"]):
-            if e.get("bullets") and len(e["bullets"]) > 1:
-                removed = e["bullets"].pop()
+            if e.get("bullets") and _content_bullets(e) > 1:
+                removed = _pop_content_bullet(e)
                 return f"Removed a bullet from {e['fields'].get('primary', '')}"
     return None

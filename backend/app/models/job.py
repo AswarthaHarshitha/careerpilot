@@ -40,6 +40,10 @@ class Job(Base):
     analyzed_with_llm: Mapped[bool] = mapped_column(default=False)
     content_hash: Mapped[str] = mapped_column(String(64), default="")
     archived: Mapped[bool] = mapped_column(default=False)
+    # Job-specific overrides. They apply to this job's resumes only and never change the master profile.
+    # {"controls": {...}, "custom": [text, ...]} - see app.resume.instructions
+    resume_instructions: Mapped[dict] = mapped_column(JSON, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")  # "My Notes & Ideas"
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 

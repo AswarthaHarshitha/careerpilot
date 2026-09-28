@@ -26,6 +26,7 @@ def settings_out(s: UserSettings) -> dict:
         "max_projects": s.max_projects, "max_bullets_per_project": s.max_bullets_per_project, "timezone": s.timezone,
         "submit_confirmation_mode": s.submit_confirmation_mode, "deadline_reminder_days": s.deadline_reminder_days,
         "follow_up_after_days": s.follow_up_after_days, "notify_in_app": s.notify_in_app,
+        "header_portfolio": s.header_portfolio, "header_github": s.header_github, "header_linkedin": s.header_linkedin,
         "ai": {"provider": s.llm_provider, "model": s.llm_model, "base_url": s.llm_base_url,
                "api_key": mask_secret(decrypt_secret(s.llm_api_key_encrypted)),
                "server_provider": server.provider if server else "none",
@@ -51,6 +52,9 @@ class PrefsIn(BaseModel):
     deadline_reminder_days: int = Field(ge=0, le=30)
     follow_up_after_days: int = Field(ge=1, le=60)
     notify_in_app: bool = True
+    header_portfolio: Literal["template", "include", "exclude"] = "template"
+    header_github: Literal["template", "include", "exclude"] = "template"
+    header_linkedin: Literal["template", "include", "exclude"] = "template"
 
 
 @router.put("/preferences")

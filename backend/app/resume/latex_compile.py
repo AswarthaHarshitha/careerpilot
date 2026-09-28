@@ -58,6 +58,16 @@ _COMPAT_SHIM = (
 )
 
 
+def _without_unused_bibliography(src: str) -> str:
+    """A resume that never cites or prints a bibliography does not need biblatex (which would require biber).
+    The compile copy replaces it with a no-op; the stored template is not changed."""
+    body = strip_comments(src)
+    if re.search(r"\\(?:printbibliography|cite\w*|bibliography\{)", body.split("\\begin{document}", 1)[-1]):
+        return src
+    out = re.sub(r"\\usepackage\s*(?:\[[^\]]*\])?\{biblatex\}", r"\\newlength{\\bibitemsep}", src)
+    return re.sub(r"\\addbibresource\s*(?:\[[^\]]*\])?\{[^}]*\}", "", out)
+
+
 @dataclass
 class CompileResult:
     pdf: bytes | None
@@ -76,7 +86,7 @@ def resolve_engine() -> str | None:
     return None
 
 
-def compile_latex(src: str) -> CompileResult:
+def compile_latex(src: str, aux_files: dict[str, str] | None = None) -> CompileResult:
     engine = resolve_engine()
     if engine is None:
         return CompileResult(None, None, "No LaTeX engine is installed on the server (install Tectonic).", "")
@@ -86,9 +96,21 @@ def compile_latex(src: str) -> CompileResult:
     timeout = get_settings().latex_timeout_seconds
     with tempfile.TemporaryDirectory(prefix="cp-latex-") as tmp:
         tex_path = os.path.join(tmp, "resume.tex")
-        text = _COMPAT_SHIM + src if engine == "tectonic" else src
+        text = _COMPAT_SHIM + _without_unused_bibliography(src) if engine == "tectonic" else src
         with open(tex_path, "w", encoding="utf-8") as fh:
             fh.write(text)
+        for aux_name, content in (aux_files or {}).items():
+            safe = os.path.basename(aux_name)
+            if safe and re.fullmatch(r"[\w.-]+\.(cls|sty|bib|bst|def|cfg|clo)", safe):
+                with open(os.path.join(tmp, safe), "w", encoding="utf-8") as fh:
+                    fh.write(content)
+        # Overleaf projects often reference a bibliography file the resume never cites; supply an empty one.
+        for name in re.findall(r"\\(?:addbibresource|bibliography)\s*(?:\[[^\]]*\])?\{([\w.-]+)\}", strip_comments(src)):
+            fname = name if name.endswith(".bib") else name + ".bib"
+            if os.path.exists(os.path.join(tmp, fname)):
+                continue
+            with open(os.path.join(tmp, fname), "w", encoding="utf-8") as fh:
+                fh.write("% intentionally empty\n")
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": os.environ.get("HOME", tmp),

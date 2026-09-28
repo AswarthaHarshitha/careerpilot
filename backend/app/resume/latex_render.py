@@ -86,11 +86,34 @@ def _section_item_separator(section: dict) -> str:
     return "\n"
 
 
-def render_latex(src: str, structure: dict, instructions: list[dict]) -> str:
-    """instructions: [{"index": section index, ...layout-specific content}]"""
+def render_latex(src: str, structure: dict, instructions: list[dict], *, header_links: dict | None = None,
+                 remove_sections: list[int] | None = None, section_titles: dict[int, str] | None = None,
+                 header_name: str | None = None) -> str:
+    """instructions: [{"index": section index, ...layout-specific content}]
+    header_links: {"portfolio"|"github"|"linkedin": {"mode": "include"|"exclude", "url": str}}
+    remove_sections: section indexes to drop entirely (command and content)."""
     sections = {s["index"]: s for s in structure["sections"]}
     reps: list[tuple[int, int, str]] = []
+    removed = set(remove_sections or [])
+    for idx in removed:
+        sec = sections.get(idx)
+        if sec is not None and "command_start" in sec:
+            reps.append((sec["command_start"], sec["span"][1], ""))
+    if header_links:
+        reps += header_link_edits(src, structure["header"]["span"], header_links)
+    for idx, title in (section_titles or {}).items():
+        sec = sections.get(idx)
+        if sec is not None and "title_span" in sec and idx not in removed and title.strip():
+            reps.append((sec["title_span"][0], sec["title_span"][1], escape(title.strip())))
+    if header_name and header_name.strip() and structure["header"].get("name"):
+        hs, he = structure["header"]["span"]
+        old = structure["header"]["name"]
+        pos = src.find(old, hs, he)
+        if pos >= 0 and header_name.strip() != old:
+            reps.append((pos, pos + len(old), escape(header_name.strip())))
     for ins in instructions:
+        if ins["index"] in removed:
+            continue
         sec = sections.get(ins["index"])
         if sec is None:
             raise RenderError(f"Section {ins['index']} does not exist in the template.")
@@ -141,3 +164,84 @@ def _clone_prototype(entries: list[dict], spec: dict) -> dict:
 
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+# --- header links -----------------------------------------------------------------------------------
+
+_SEP_ONLY = re.compile(r"^[\s|$~]*(\\(?:vert|textbar|quad|qquad|hspace\{[^}]*\}|,|;|\s))*[\s|$~]*$")
+_ICON = re.compile(r"\\fa[A-Z][A-Za-z]*\*?")
+
+
+def link_kind(url: str, portfolio_url: str = "") -> str:
+    low = url.lower()
+    if low.startswith("mailto:"):
+        return "email"
+    if low.startswith("tel:"):
+        return "phone"
+    if "linkedin." in low:
+        return "linkedin"
+    if "github.com" in low:
+        return "github"
+    return "portfolio"
+
+
+def _header_hrefs(src: str, span: list[int]) -> list[tuple[int, int, str]]:
+    from app.resume.latex_syntax import comment_mask, iter_macros
+
+    mask = comment_mask(src)
+    out = []
+    for c in iter_macros(src, span[0], span[1], mask):
+        if c.name == "href" and len(c.args) >= 2:
+            out.append((c.start, c.args[1].end + 1, c.args[0].inner(src).strip()))
+    return out
+
+
+def header_link_edits(src: str, span: list[int], wanted: dict) -> list[tuple[int, int, str]]:
+    """Removes or adds header links while keeping the template's own separators, icons and styling."""
+    links = _header_hrefs(src, span)
+    reps: list[tuple[int, int, str]] = []
+    present = {link_kind(u): (s, e, u) for s, e, u in links}
+    for kind, spec in wanted.items():
+        mode, url = spec.get("mode"), spec.get("url", "")
+        if mode == "exclude" and kind in present:
+            s, e, _ = present[kind]
+            i = next(n for n, lk in enumerate(links) if lk[0] == s)
+            left = src[links[i - 1][1]:s] if i > 0 else None
+            right = src[e:links[i + 1][0]] if i + 1 < len(links) else None
+            if left is not None and _SEP_ONLY.match(left):
+                reps.append((links[i - 1][1], e, ""))
+            elif right is not None and _SEP_ONLY.match(right):
+                reps.append((s, links[i + 1][0], ""))
+            else:
+                reps.append((s, e, ""))
+        elif mode == "include" and kind not in present and url and links:
+            # clone the style of an existing profile link (GitHub > LinkedIn > last link)
+            proto = present.get("github") or present.get("linkedin") or (links[-1][0], links[-1][1], links[-1][2])
+            ps, pe, purl = proto
+            clone = src[ps:pe].replace(purl, escape_url(url), 1)
+            clone = _ICON.sub(r"\\faGlobe", clone, count=1)
+            label = {"portfolio": "Portfolio", "github": "GitHub", "linkedin": "LinkedIn"}[kind]
+            clone = _relabel(clone, label)
+            last_s, last_e, _ = links[-1]
+            sep = src[links[-2][1]:links[-1][0]] if len(links) >= 2 and _SEP_ONLY.match(src[links[-2][1]:links[-1][0]]) \
+                else " $|$ "
+            reps.append((last_e, last_e, sep + clone))
+    return reps
+
+
+def _relabel(href_call: str, label: str) -> str:
+    """Replaces the visible text of a cloned \\href (keeping its icon and styling macros) with `label`."""
+    m = re.match(r"(\\href\{[^{}]*\}\{)(.*)(\})\s*$", href_call, re.S)
+    if not m:
+        return href_call
+    head, body, tail = m.groups()
+    inner = re.search(r"\\(?:underline|textit|textbf|emph|texttt)\{([^{}]*)\}\s*$", body)
+    if inner:
+        body = body[: inner.start(1)] + escape(label) + body[inner.end(1):]
+    else:
+        run = re.search(r"([^\\{}\s][^\\{}]*)$", body)
+        if run:
+            body = body[: run.start(1)] + escape(label)
+        else:
+            body = body + " " + escape(label)
+    return head + body + tail

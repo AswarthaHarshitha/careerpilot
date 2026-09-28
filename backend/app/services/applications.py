@@ -91,6 +91,9 @@ def start_session(db: Session, a: Application, resume_version_id: int | None) ->
         rv = db.get(ResumeVersion, rv_id)
         if rv is None or rv.user_id != a.user_id or rv.pdf is None:
             raise AppError("Choose a resume version that has a PDF.", code="invalid_resume")
+        if rv.export_blocked:
+            raise AppError("That resume version has failing checks. Fix them on the resume page first.",
+                           code="export_blocked", status_code=409)
     else:
         raise AppError("Generate a resume for this job first.", code="no_resume", actions=["generate_resume"])
     active = db.scalar(select(AutomationSession).where(AutomationSession.application_id == a.id,

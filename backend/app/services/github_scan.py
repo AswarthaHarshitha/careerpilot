@@ -12,7 +12,8 @@ from app.github.client import GitHubClient, RateLimited, RepoInfo
 from app.github.evidence import analyze_repository, select_manifests, select_readme
 from app.llm.provider import LLMError, get_provider, wrap_untrusted
 from app.matching.taxonomy import canonicalize, category_of, display_name
-from app.models import Project, ProjectEvidence, SuggestedProject, UserSettings
+from app.models import Project, ProjectEvidence, SuggestedProject, UserProfile, UserSettings
+from app.services.assets import apply_classification
 from app.tasks.queue import RetryLater, TaskContext, task_handler
 
 log = logging.getLogger(__name__)
@@ -52,6 +53,15 @@ def upsert_repository(db: Session, user_id: int, gh: GitHubClient, repo: RepoInf
     unchanged = (project.last_scanned_at is not None and project.pushed_at == repo.pushed_at
                  and not project.scan_error and not force)
     project.pushed_at = repo.pushed_at
+    profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user_id))
+    was_profile_asset = apply_classification(project, github_username=settings.github_username if settings else "",
+                                             portfolio_url=profile.portfolio_url if profile else "")
+    if was_profile_asset and profile and not profile.portfolio_url and project.homepage_url:
+        profile.portfolio_url = project.homepage_url  # the user's own site, usable as a header link
+    if project.status not in ("built", "verified", "deployed"):
+        project.status = "built"
+    if project.homepage_url and project.status == "built":
+        project.status = "deployed"
     if unchanged:
         db.commit()
         return project
@@ -158,12 +168,6 @@ def scan_account(ctx: TaskContext) -> dict:
     with ctx.step("Listing repositories"):
         repos = gh.list_repos(settings.github_username, settings.include_private_repos)
         repos = [r for r in repos if settings.include_forks or not r.fork]
-        # The special <username>/<username> repository is a profile README, not a project: its claims are not evidence.
-        profile_repo = f"{settings.github_username}/{settings.github_username}".lower()
-        repos = [r for r in repos if r.full_name.lower() != profile_repo]
-        for stale in db.scalars(select(Project).where(Project.user_id == user_id,
-                                                      Project.repo_full_name.ilike(profile_repo))):
-            stale.hidden = True
     scanned, skipped, failed = 0, 0, []
     label = "Inspecting repositories"
     ctx._set_step(label, "running", f"0 of {len(repos)}")
@@ -221,26 +225,35 @@ def scan_single_repo(ctx: TaskContext) -> dict:
 
 
 def verify_suggested_projects(db: Session, user_id: int) -> int:
-    """A suggested project becomes verified only when its linked repository shows verified evidence for the gap
-    skills it was meant to demonstrate."""
+    """A suggested project is verified only when its linked repository shows verified evidence for the gap skills
+    it was meant to demonstrate. The per-skill result is stored for display."""
     promoted = 0
     suggestions = db.scalars(select(SuggestedProject).where(SuggestedProject.user_id == user_id,
-                                                            SuggestedProject.linked_project_id.is_not(None),
-                                                            SuggestedProject.status != "verified")).all()
+                                                            SuggestedProject.linked_project_id.is_not(None))).all()
     for sp in suggestions:
         project = db.get(Project, sp.linked_project_id)
         if project is None:
             continue
-        verified = {e.canonical for e in project.evidence if e.status in ("verified", "user_provided")}
-        gaps = [g for g in sp.gap_skills if g]
-        missing = [display_name(g) for g in gaps if g not in verified]
-        if gaps and not missing:
-            sp.status = "verified"
-            sp.verification_notes = f"Verified from {project.repo_full_name}: " + ", ".join(display_name(g) for g in gaps)
-            promoted += 1
+        by_key: dict[str, str] = {}
+        for e in project.evidence:
+            if e.canonical and e.status in ("verified", "user_provided"):
+                by_key.setdefault(e.canonical, e.source_detail or e.source_type)
+        wanted = list(dict.fromkeys([g for g in sp.gap_skills if g] + [a for a in sp.existing_skills if a]))
+        sp.verification = [{"skill": k, "label": display_name(k), "verified": k in by_key, "source": by_key.get(k, ""),
+                            "gap": k in sp.gap_skills} for k in wanted]
+        missing = [display_name(g) for g in sp.gap_skills if g and g not in by_key]
+        if not project.last_scanned_at:
+            sp.status = "building"
+            sp.verification_notes = "Waiting for the repository scan."
+        elif sp.gap_skills and not missing:
+            if sp.status != "verified":
+                promoted += 1
+            sp.status = "deployed" if project.homepage_url else "verified"
+            sp.verification_notes = f"Verified from {project.repo_full_name}: " + ", ".join(
+                display_name(g) for g in sp.gap_skills)
         else:
-            sp.status = "in_progress"
-            sp.verification_notes = ("Linked repository does not yet show verified evidence for: " + ", ".join(missing)
-                                     if missing else "No gap skills recorded.")
+            sp.status = "built"
+            sp.verification_notes = ("The repository does not yet show verified evidence for: " + ", ".join(missing)
+                                      if missing else "No gap skills recorded.")
     db.commit()
     return promoted

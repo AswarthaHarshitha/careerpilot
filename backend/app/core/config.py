@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     fetch_max_bytes: int = 5_000_000
     # Hosts that bypass the private-network block. Only for local test fixtures; never set in production.
     fetch_allow_private_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Render JavaScript-built career pages in a sandboxed headless browser when their HTML is empty.
+    browser_render_enabled: bool = True
     github_api_base: str = "https://api.github.com"
     github_raw_base: str = "https://raw.githubusercontent.com"
     github_token: str = ""  # optional server-wide token; users can also store their own

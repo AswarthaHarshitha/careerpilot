@@ -14,9 +14,11 @@ def load_snapshot(db: Session, user_id: int) -> ProfileSnapshot:
                         .options(selectinload(Experience.bullets))):
         text = " ".join([e.title] + [b.text for b in e.bullets])
         snap.experiences.append(ExperienceSnapshot(e.id, f"{e.title} at {e.organization}".strip(), text))
-    projects = db.scalars(select(Project).where(Project.user_id == user_id, Project.hidden.is_(False))
+    projects = db.scalars(select(Project).where(Project.user_id == user_id)
                           .options(selectinload(Project.evidence), selectinload(Project.bullets))).all()
     for p in projects:
+        if not p.evidence_eligible:  # portfolio/profile assets, excluded repos and unfinished projects
+            continue
         snap.projects.append(ProjectSnapshot(
             id=p.id, title=p.title, description=p.description,
             evidence=[(e.canonical, e.status, e.label, e.source_detail) for e in p.evidence

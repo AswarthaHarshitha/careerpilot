@@ -54,6 +54,51 @@ def _idea_category(keys: list[str]) -> str:
     return "default"
 
 
+COMPATIBLE = {
+    "cloud": {"cloud", "devops", "database", "backend"}, "devops": {"devops", "cloud", "testing"},
+    "ml": {"ml", "data"}, "data": {"data", "ml", "database"}, "backend": {"backend", "database", "security", "concept"},
+    "database": {"database", "backend", "data"}, "frontend": {"frontend", "mobile", "testing"},
+    "testing": {"testing", "devops"}, "language": {"language", "backend", "concept"},
+}
+
+
+def coherent_gaps(gaps: list[str], limit: int = 3) -> list[str]:
+    """Picks up to `limit` gap skills that belong together in one real project, most important first.
+    Never tries to cram every missing keyword into a single project."""
+    if not gaps:
+        return []
+    primary = gaps[0]
+    allowed = COMPATIBLE.get(category_of(primary), {category_of(primary)})
+    chosen = [primary]
+    for g in gaps[1:]:
+        if len(chosen) >= limit:
+            break
+        if category_of(g) in allowed:
+            chosen.append(g)
+    return chosen
+
+
+DEPTH = {
+    "cloud": ["Infrastructure as code for every cloud resource", "Least-privilege IAM roles and secrets in the "
+              "provider's secret manager", "Health checks, structured logs and an alarm on errors"],
+    "devops": ["Pipeline stages: lint, test, build image, deploy, smoke test", "Rollback on failed smoke test",
+               "Container image scanning and pinned base images"],
+    "ml": ["Reproducible training with a fixed data split and recorded metrics", "An evaluation script whose "
+           "numbers you can quote honestly", "A small inference API with input validation"],
+    "data": ["Idempotent loads with data-quality checks", "A documented schema and lineage", "Scheduled runs with "
+             "failure alerts"],
+    "backend": ["Authentication, role-based authorization and per-user data isolation", "Database migrations and "
+                "pagination", "Background job for slow work", "Consistent error responses"],
+    "database": ["Schema design with indexes justified by queries", "Measured query timings before/after",
+                 "Backups/restore documented"],
+    "frontend": ["Accessible components with loading, empty and error states", "Client-side routing and data "
+                 "caching", "Component and end-to-end tests"],
+    "testing": ["Page objects and fixtures", "Tests running in CI with reports", "Flaky-test handling"],
+    "language": ["Clear module structure and packaging", "Unit tests and type checks", "A README with usage "
+                 "examples"],
+}
+
+
 def deterministic_plan(gaps: list[str], anchors: list[str], role: str = "", company: str = "") -> dict:
     gap_names = [display_name(k) for k in gaps]
     anchor_names = [display_name(k) for k in anchors] or ["Python"]
@@ -64,7 +109,7 @@ def deterministic_plan(gaps: list[str], anchors: list[str], role: str = "", comp
     title = title_t.format(gap=gap_str, anchor=anchor)
     stack = list(dict.fromkeys(gap_names + anchor_names[:3] + ["PostgreSQL" if cat in ("backend", "cloud") else ""]))
     stack = [s for s in stack if s]
-    features = [
+    features = DEPTH.get(cat, [])[:3] + [
         f"Core workflow that cannot work without {gap_names[0]}",
         "Authentication and per-user data isolation",
         "Input validation with clear error messages",
@@ -113,6 +158,15 @@ def deterministic_plan(gaps: list[str], anchors: list[str], role: str = "", comp
                          "Repository description and homepage set to the live URL",
                          "CI badge in the README; protected main branch"],
     }
+    plan["why"] = (f"The job asks for {', '.join(gap_names)} and none of your finished projects demonstrates "
+                   f"{'it' if len(gap_names) == 1 else 'them'}. This project builds on what you already use "
+                   f"({', '.join(anchor_names[:3])}) so it is realistic to finish and easy to discuss in an interview.")
+    plan["interview_points"] = [
+        f"Why {gap_names[0]} was the right tool for this part of the system, and what you would do differently",
+        "One bug or failure you hit and how you diagnosed it",
+        "How you tested it and what the tests do not cover",
+        "What it would take to run this for real users",
+    ]
     plan["coding_prompt"] = coding_prompt(plan)
     return plan
 

@@ -3,7 +3,7 @@ import { twMerge } from 'tailwind-merge'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, Check, CircleDashed, ExternalLink, Loader2, RotateCw, X } from 'lucide-react'
 import {
-  createContext, forwardRef, useCallback, useContext, useEffect, useState,
+  cloneElement, createContext, forwardRef, isValidElement, useCallback, useContext, useEffect, useId, useState,
   type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react'
@@ -73,12 +73,19 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
 }
 
 export function Field({ label, hint, children, className }: { label: string; hint?: ReactNode; children: ReactNode; className?: string }) {
+  const hintId = useId()
+  // The hint sits outside <label> so it does not become part of the control's accessible name.
+  const control = hint && isValidElement(children)
+    ? cloneElement(children as React.ReactElement<{ 'aria-describedby'?: string }>, { 'aria-describedby': hintId })
+    : children
   return (
-    <label className={cx('block', className)}>
-      <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{label}</span>
-      {children}
-      {hint && <span className="mt-1 block text-[12px] text-muted">{hint}</span>}
-    </label>
+    <div className={cx('block', className)}>
+      <label className="block">
+        <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{label}</span>
+        {control}
+      </label>
+      {hint && <span id={hintId} className="mt-1 block text-[12px] text-muted">{hint}</span>}
+    </div>
   )
 }
 

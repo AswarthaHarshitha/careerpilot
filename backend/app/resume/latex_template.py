@@ -97,6 +97,8 @@ def parse_latex_template(src: str) -> dict:
             "title": title,
             "kind": kind,
             "command": call.name,
+            "command_start": call.start,
+            "title_span": [call.args[0].start + 1, call.args[0].end],
             "span": [content_start, content_end],
         }
         sec.update(_parse_section_content(src, mask, content_start, content_end, kind))
@@ -164,9 +166,14 @@ def _parse_section_content(src: str, mask: list[bool], start: int, end: int, kin
     items = _find_items(src, mask, calls, start, end)
 
     if kind == "skills":
-        cats = _parse_skill_lines(src, mask, calls, start, end)
+        cats = _parse_skill_lines(src, mask, calls, start, end) or _tabular_skills(src, mask, calls, start, end)
         if cats:
             return {"layout": "skills", "skills": cats}
+
+    if kind in ("experience", "projects", "leadership", "publications", "education", "other"):
+        tab = _tabular_entries(src, mask, calls, start, end, kind, items)
+        if tab:
+            return {"layout": "entries", "entries": tab, "entry_separator": _entry_separator(src, tab)}
 
     headings = _find_headings(calls, items, kind)
     if headings:
@@ -187,6 +194,11 @@ def _parse_section_content(src: str, mask: list[bool], start: int, end: int, kin
             "items_region": [items[0]["start"], items[-1]["end"]],
             "item_separator": _item_separator(src, items),
         }
+
+    if kind == "education":
+        rows = _table_rows(src, mask, calls, start, end)
+        if rows:
+            return {"layout": "table", "rows": rows}
 
     para = _paragraph_span(src, mask, start, end)
     if para:
@@ -236,9 +248,188 @@ def _find_items(src, mask, calls: list[MacroCall], start, end) -> list[dict]:
     return items
 
 
+TECH_LINE = re.compile(r"^\s*(?:\\textbf\{)?\s*(technologies|tech stack|tools|stack|built with)\s*:?", re.I)
+
+
 def _item_dict(src, it) -> dict:
-    return {"span": [it["start"], it["end"]], "inner": it["inner"], "macro": it["macro"],
-            "text": to_plain(src[it["inner"][0] : it["inner"][1]])}
+    raw = src[it["inner"][0] : it["inner"][1]]
+    d = {"span": [it["start"], it["end"]], "inner": it["inner"], "macro": it["macro"], "text": to_plain(raw)}
+    if TECH_LINE.match(raw):
+        d["tech_line"] = True
+    return d
+
+
+# --- table-based layouts (tabular / tabularx rows) --------------------------------------------------
+
+TABULAR_ENVS = ("tabularx", "tabular", "tabular*", "longtable", "supertabular")
+
+
+def _envs(src, mask, calls, start, end, names=TABULAR_ENVS) -> list[tuple[MacroCall, int, int]]:
+    """Top-level environments of the given names: (begin call, body start, end index after \\end{...})."""
+    out, depth, cur = [], 0, None
+    for c in calls:
+        if c.start < start or c.start >= end or not c.args:
+            continue
+        env = c.args[0].inner(src)
+        if c.name == "begin" and env in names:
+            if depth == 0:
+                cur = c
+            depth += 1
+        elif c.name == "end" and env in names and depth:
+            depth -= 1
+            if depth == 0 and cur is not None:
+                body_start = cur.args[-1].end + 1
+                out.append((cur, body_start, c.start, c.args[0].end + 1))
+                cur = None
+    return out
+
+
+def _split_top(src, mask, a: int, b: int, sep: str) -> list[tuple[int, int]]:
+    """Splits src[a:b] at top-level occurrences of sep (\\\\ or &), ignoring braces and comments."""
+    parts, depth, i, last = [], 0, a, a
+    while i < b:
+        if mask[i]:
+            i += 1
+            continue
+        ch = src[i]
+        if ch == "\\" and src.startswith("\\\\", i) and sep == "\\\\" and depth == 0:
+            parts.append((last, i))
+            i += 2
+            m = re.match(r"\[[^\]]*\]", src[i:b])  # row spacing like \\[-3pt]
+            if m:
+                i += m.end()
+            last = i
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        elif ch == sep and depth == 0:
+            parts.append((last, i))
+            last = i + 1
+        i += 1
+    parts.append((last, b))
+    return parts
+
+
+def _trim(src, mask, a: int, b: int) -> tuple[int, int]:
+    while a < b and (src[a].isspace() or mask[a]):
+        a += 1
+    while b > a and (src[b - 1].isspace() or mask[b - 1]):
+        b -= 1
+    return a, b
+
+
+def _innermost_text(src, mask, a: int, b: int) -> tuple[int, int]:
+    """For a cell like "\\hfill {\\small Vijayawada}" or "\\underline{\\small Intern}", the span of the words."""
+    a, b = _trim(src, mask, a, b)
+    for _ in range(4):
+        m = re.match(r"(?:\\(?:hfill|small|footnotesize|normalsize|large|itshape|bfseries|scshape|centering|quad)\s*)+",
+                     src[a:b])
+        if m:
+            a += m.end()
+            a, b = _trim(src, mask, a, b)
+        m = re.match(r"\\(?:textbf|textit|emph|underline|textsc|small|footnotesize|mbox)\s*\{", src[a:b]) or \
+            re.match(r"\{", src[a:b])
+        if m:
+            ob = a + m.end() - 1
+            cb = match_brace(src, ob, mask)
+            if cb == b - 1:
+                a, b = ob + 1, cb
+                a, b = _trim(src, mask, a, b)
+                continue
+        break
+    return a, b
+
+
+def _tabular_entries(src, mask, calls, start, end, kind, items) -> list[dict]:
+    entries = []
+    for begin, body_start, body_end, env_end in _envs(src, mask, calls, start, end):
+        rows = _split_top(src, mask, body_start, body_end, "\\\\")
+        head_cells: list[list[tuple[int, int]]] = []
+        own_items = [it for it in items if body_start <= it["start"] < body_end]
+        for r0, r1 in rows:
+            if "\\multicolumn" in src[r0:r1] and ("\\item" in src[r0:r1] or "itemize" in src[r0:r1]):
+                break
+            cells = [(_trim(src, mask, x0, x1)) for x0, x1 in _split_top(src, mask, r0, r1, "&")]
+            if any(to_plain(src[x0:x1]) for x0, x1 in cells):
+                head_cells.append(cells)
+        if not head_cells:
+            continue
+        if kind == "education" and not own_items and len(head_cells) > 1:
+            return []  # a table of education rows: recorded as a table and left as it is
+        fields, slots = {}, {}
+        first = head_cells[0]
+        pa, pb = _innermost_text(src, mask, *first[0])
+        bold = re.search(r"\\textbf\s*\{", src[first[0][0]:first[0][1]])
+        fields["primary"] = to_plain(src[pa:pb])
+        slots["primary"] = [pa, pb]
+        if len(first) > 1:
+            ra, rb = first[-1]
+            right = src[ra:rb]
+            for c in iter_macros(src, ra, rb, mask):
+                if c.name == "href" and len(c.args) >= 2:
+                    fields["url"] = c.args[0].inner(src).strip()
+                    slots["url"] = [c.args[0].start + 1, c.args[0].end]
+                    slots["link_call"] = [c.start, c.args[1].end + 1]
+                    break
+            if "url" not in fields and to_plain(right):
+                da, db = _innermost_text(src, mask, ra, rb)
+                fields["dates"] = to_plain(src[da:db])
+                slots["dates"] = [da, db]
+        if len(head_cells) > 1:
+            second = head_cells[1]
+            sa, sb = _innermost_text(src, mask, *second[0])
+            fields["secondary"] = to_plain(src[sa:sb])
+            slots["secondary"] = [sa, sb]
+            if len(second) > 1:
+                la, lb = _innermost_text(src, mask, *second[-1])
+                fields["location"] = to_plain(src[la:lb])
+                slots["location"] = [la, lb]
+        fields["short_name"] = re.split(r"\s+[—–-]{1,2}\s+|\s*\|\s*", fields["primary"], maxsplit=1)[0].strip()
+        if not bold and not own_items:
+            continue
+        entries.append({
+            "span": [begin.start, env_end],
+            "heading": {"macro": "tabular", "span": [begin.start, own_items[0]["start"] if own_items else env_end],
+                        "args": []},
+            "items": [_item_dict(src, it) for it in own_items],
+            "items_region": [own_items[0]["start"], own_items[-1]["end"]] if own_items else None,
+            "item_separator": _item_separator(src, own_items) if own_items else "",
+            "fields": fields,
+            "slots": slots,
+        })
+    return entries
+
+
+def _table_rows(src, mask, calls, start, end) -> list[list[str]]:
+    rows = []
+    for _, body_start, body_end, _ in _envs(src, mask, calls, start, end):
+        for r0, r1 in _split_top(src, mask, body_start, body_end, "\\\\"):
+            cells = [to_plain(src[a:b]) for a, b in _split_top(src, mask, r0, r1, "&")]
+            if any(cells):
+                rows.append(cells)
+    return rows
+
+
+def _tabular_skills(src, mask, calls, start, end) -> list[dict]:
+    cats = []
+    for _, body_start, body_end, _ in _envs(src, mask, calls, start, end):
+        for r0, r1 in _split_top(src, mask, body_start, body_end, "\\\\"):
+            cells = _split_top(src, mask, r0, r1, "&")
+            if len(cells) < 2:
+                continue
+            name = to_plain(src[cells[0][0]:cells[0][1]]).strip().rstrip(":")
+            va, vb = _trim(src, mask, *cells[-1])
+            value = to_plain(src[va:vb])
+            if not name or not value or len(name) > 60:
+                continue
+            cats.append({"name": name, "span": [va, vb],
+                         "items": [x.strip() for x in _split_top_level_commas(value) if x.strip()]})
+    return cats
 
 
 def _item_separator(src, items) -> str:
@@ -544,6 +735,22 @@ def _paragraph_span(src, mask, start, end) -> list[int] | None:
         i += 1
     while j > i and (src[j - 1].isspace() or mask[j - 1]):
         j -= 1
+    if i >= j:
+        return None
+    # leave trailing/leading layout commands (\vspace{-5pt}, \medskip ...) outside the editable text
+    layout_cmd = re.compile(r"\\(?:vspace\*?\{[^{}]*\}|hspace\*?\{[^{}]*\}|medskip|smallskip|bigskip|par|noindent|"
+                            r"newline)\s*$")
+    while True:
+        m = layout_cmd.search(src[i:j])
+        if not m:
+            break
+        j = i + m.start()
+        while j > i and (src[j - 1].isspace() or mask[j - 1]):
+            j -= 1
+    lead_cmd = re.compile(r"^\s*\\(?:vspace\*?\{[^{}]*\}|medskip|smallskip|noindent)\s*")
+    m = lead_cmd.match(src[i:j])
+    if m:
+        i += m.end()
     if i >= j:
         return None
     seg = src[i:j]

@@ -1,0 +1,28 @@
+# Local PostgreSQL and the API container, for running CareerPilot against Postgres like production.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: careerpilot
+      POSTGRES_PASSWORD: careerpilot
+      POSTGRES_DB: careerpilot
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U careerpilot"]
+      interval: 3s
+      retries: 20
+  api:
+    build: ./backend
+    platform: linux/amd64
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql://careerpilot:careerpilot@db:5432/careerpilot
+      JWT_SECRET: local-development-secret-change-me-0123456789
+      LLM_PROVIDER: ${LLM_PROVIDER:-none}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    ports: ["8010:8000"]
+volumes:
+  pgdata:

@@ -6,6 +6,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db import Base, UTCDateTime, utcnow
 
 EVIDENCE_STATUSES = ("verified", "user_provided", "inferred", "unsupported")
+# What a repository or entry is. Only "project" may appear in a resume's Projects section or count as evidence.
+ASSET_TYPES = ("project", "personal_profile")
+PROJECT_STATUSES = ("idea", "planned", "building", "built", "verified", "deployed")
+# Statuses that represent finished work and may be used as resume evidence.
+EVIDENCE_READY_STATUSES = ("built", "verified", "deployed")
 # Evidence statuses that may appear as factual resume claims without review.
 CLAIMABLE_STATUSES = ("verified", "user_provided")
 
@@ -71,7 +76,13 @@ class Project(Base):
     pushed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     last_scanned_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     scan_error: Mapped[str] = mapped_column(Text, default="")
-    hidden: Mapped[bool] = mapped_column(Boolean, default=False)  # excluded from matching and resumes
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False)  # hidden from the library view
+    # "personal_profile" (portfolio site, profile README) is never a project, whatever code it contains.
+    asset_type: Mapped[str] = mapped_column(String(30), default="project")
+    asset_type_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # set by CareerPilot's portfolio rule
+    # The user's switch: "Exclude from Resume Intelligence".
+    resume_eligible: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(20), default="built")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
     evidence: Mapped[list["ProjectEvidence"]] = relationship(
@@ -84,6 +95,12 @@ class Project(Base):
     @property
     def title(self) -> str:
         return self.display_name or self.name
+
+    @property
+    def evidence_eligible(self) -> bool:
+        """True only for finished projects the user has not excluded - never for a portfolio/profile."""
+        return (self.asset_type == "project" and self.resume_eligible and not self.hidden
+                and self.status in EVIDENCE_READY_STATUSES)
 
 
 class ProjectEvidence(Base):
@@ -128,9 +145,12 @@ class SuggestedProject(Base):
     title: Mapped[str] = mapped_column(String(200))
     gap_skills: Mapped[list] = mapped_column(JSON, default=list)
     existing_skills: Mapped[list] = mapped_column(JSON, default=list)
-    # not_built | in_progress | verified
-    status: Mapped[str] = mapped_column(String(20), default="not_built")
+    # idea | planned | building | built | verified | deployed
+    status: Mapped[str] = mapped_column(String(20), default="idea")
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     linked_project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"))
     verification_notes: Mapped[str] = mapped_column(Text, default="")
+    # Per-skill verification of the linked repository: [{"skill", "label", "verified": bool, "source"}]
+    verification: Mapped[list] = mapped_column(JSON, default=list)
+    auto_generated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

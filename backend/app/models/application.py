@@ -45,9 +45,34 @@ class ResumeVersion(Base):
     ats_report: Mapped[dict] = mapped_column(JSON, default=dict)
     recruiter_report: Mapped[dict] = mapped_column(JSON, default=dict)
     changes: Mapped[list] = mapped_column(JSON, default=list)
+    # Effective configuration (template defaults + master settings + job instructions) used for this version.
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Pre-export gate: {"checks": [...], "blocked": bool, "length_conflict": {...} | None}
+    quality_report: Mapped[dict] = mapped_column(JSON, default=dict)
+    export_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Edit history: `revision` is the state currently shown; revisions above it can be redone.
+    revision: Mapped[int] = mapped_column(Integer, default=1)
     used_llm: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class ResumeRevision(Base):
+    """One edit transaction on a resume: the complete document state after the change."""
+
+    __tablename__ = "resume_revisions"
+    __table_args__ = (UniqueConstraint("version_id", "number", name="uq_revision_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("resume_versions.id", ondelete="CASCADE"), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    label: Mapped[str] = mapped_column(String(300))
+    source: Mapped[str] = mapped_column(String(20))  # generated | user | assistant | restore
+    content: Mapped[dict] = mapped_column(JSON, default=dict)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    changed: Mapped[list] = mapped_column(JSON, default=list)  # element ids touched by this change
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
 class Application(Base):

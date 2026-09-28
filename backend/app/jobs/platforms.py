@@ -49,6 +49,8 @@ def detect_platform(url: str) -> str:
         return "smartrecruiters"
     if host.endswith("myworkdayjobs.com") or host.endswith("myworkdaysite.com"):
         return "workday"
+    if host.endswith("oraclecloud.com") and "CandidateExperience" in path:
+        return "oracle"
     if "taleo.net" in host:
         return "taleo"
     if host.endswith("icims.com"):
@@ -250,10 +252,37 @@ def _generic(url: str, platform: str) -> RawPosting:
     if "json" in res.content_type:
         raise ExternalFetchError("The link returned data instead of a job page.",
                                  hint="Paste the job description instead.")
-    soup = BeautifulSoup(res.text, "lxml")
+    orc = _oracle_from_page(res.text, res.url)
+    if orc:
+        return orc
+    post = _parse_html(res.text, res.url, platform)
+    if len(post.description_text) < 150:
+        # Many career sites build the page with JavaScript. Render it in a sandboxed headless browser.
+        from app.jobs.render import BrowserUnavailable, render_page
+
+        try:
+            html, final_url = render_page(res.url)
+        except BrowserUnavailable:
+            html = ""
+        if html:
+            rendered = _parse_html(html, final_url, platform)
+            if len(rendered.description_text) > len(post.description_text):
+                rendered.notes.append("The page was read after running its JavaScript.")
+                post = rendered
+    if len(post.description_text) < 150:
+        raise ExternalFetchError(
+            "The job page did not contain a readable job description.",
+            hint="The site may require sign-in, block automated access, or use a portal CareerPilot cannot read yet.",
+            actions=["open_manually", "paste_description", "retry"],
+        )
+    return post
+
+
+def _parse_html(html: str, page_url: str, platform: str) -> RawPosting:
+    soup = BeautifulSoup(html, "lxml")
     meta = page_meta(soup)
     ld = extract_json_ld_jobposting(soup)
-    post = RawPosting(platform=platform, job_url=res.url)
+    post = RawPosting(platform=platform, job_url=page_url)
     if ld:
         post.title = _s(ld.get("title"))
         org = ld.get("hiringOrganization")
@@ -282,14 +311,76 @@ def _generic(url: str, platform: str) -> RawPosting:
         post.title = meta["h1"] or meta["og_title"] or meta["title"]
     if not post.company:
         post.company = meta["site_name"]
-    post.application_url = post.application_url or _find_apply_link(soup, res.url) or res.url
-    if len(post.description_text) < 150:
-        raise ExternalFetchError(
-            "The job page did not contain a readable job description.",
-            hint="The site may load its content with JavaScript, require sign-in, or use an unsupported portal.",
-            actions=["open_manually", "paste_description", "retry"],
-        )
+    post.application_url = post.application_url or _find_apply_link(soup, page_url) or page_url
     return post
+
+
+# --- Oracle Recruiting Cloud (Oracle HCM Candidate Experience) ------------------------------------
+
+_ORC_PATH = re.compile(r"/hcmUI/CandidateExperience/[a-z-]+/sites/(CX(?:_\d+)?)/(?:job|requisitions/preview)/(\d+)", re.I)
+
+
+def _oracle_from_page(html: str, page_url: str) -> RawPosting | None:
+    """Oracle Recruiting Cloud pages are empty shells; the posting comes from the tenant's public REST API."""
+    parts = urlsplit(page_url)
+    m = _ORC_PATH.search(parts.path)
+    if m:
+        api_base, site, job_id = f"{parts.scheme}://{parts.netloc}", m.group(1), m.group(2)
+    else:
+        if "CandidateExperience" not in html:
+            return None
+        base = re.search(r'data-apibaseurl="(https://[\w.-]+\.oraclecloud\.com(?::\d+)?)"', html)
+        site = re.search(r"siteNumber=(CX(?:_\d+)?)\b", html)
+        job = re.search(r"/job/(\d+)", parts.path)
+        if not (base and site and job):
+            return None
+        api_base, site, job_id = base.group(1), site.group(1), job.group(1)
+    company = ""
+    og = re.search(r'og:site_name"\s+content="([^"]+)"', html or "")
+    if og:
+        company = og.group(1)
+    return _oracle(api_base, site, job_id, page_url, company)
+
+
+def _oracle(api_base: str, site: str, job_id: str, page_url: str, company: str = "") -> RawPosting | None:
+    api = (f"{api_base}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true"
+           f'&finder=ById;Id="{job_id}",siteNumber={site}')
+    try:
+        data = json.loads(fetch(api, accept="application/json").body)
+    except (ExternalFetchError, ValueError):
+        return None
+    items = data.get("items") or []
+    if not items:
+        return None
+    d = items[0]
+    parts = []
+    for title, key in (("About the role", "ExternalDescriptionStr"), ("Responsibilities", "ExternalResponsibilitiesStr"),
+                       ("Qualifications", "ExternalQualificationsStr")):
+        text = html_to_text(d.get(key) or "")
+        if text and len(text) > 20:
+            parts.append(f"## {title}\n{text}")
+    locations = [d.get("PrimaryLocation") or ""] + [x.get("Name", "") for x in (d.get("secondaryLocations") or [])
+                                                   if isinstance(x, dict)]
+    workplace = (d.get("WorkplaceTypeCode") or d.get("WorkplaceType") or "").lower()
+    workplace = "remote" if "remote" in workplace else "hybrid" if "hybrid" in workplace else (
+        "onsite" if "site" in workplace else "")
+    end = _date(d.get("ExternalPostedEndDate"))
+    return RawPosting(
+        platform="oracle",
+        job_url=page_url,
+        title=d.get("Title") or "",
+        company=company or d.get("LegalEmployer") or "",
+        job_code=str(d.get("Id") or job_id),
+        location=" / ".join(x for x in locations if x),
+        workplace_type=workplace,
+        employment_type=d.get("JobSchedule") or d.get("WorkerType") or "",
+        description_text="\n\n".join(parts),
+        application_url=page_url,
+        posted_date=_date(d.get("ExternalPostedStartDate")),
+        deadline=end,
+        deadline_source=f"Posting closes {end.isoformat()} (end date in the employer's job data)" if end else "",
+        notes=["Oracle Recruiting Cloud applications ask you to verify your email before the form opens."],
+    )
 
 
 def _find_apply_link(soup: BeautifulSoup, base: str) -> str:

@@ -24,6 +24,7 @@ from app.models import (
     UserProfile,
     UserSettings,
 )
+from app.services.assets import is_personal_profile
 from app.services.github_scan import slugify
 
 CERT_RX = re.compile(r"certif|certificate|licen[cs]e", re.I)
@@ -115,6 +116,10 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
             for e in sec["entries"]:
                 f = e["fields"]
                 bullets = [it["text"] for it in e["items"]]
+                if is_personal_profile(f.get("short_name") or f.get("primary", ""), homepage=f.get("url", "")):
+                    counts.setdefault("skipped_profile_assets", 0)
+                    counts["skipped_profile_assets"] += 1
+                    continue  # a portfolio entry is a link, not a project
                 project = _match_project(projects, f)
                 if project is None:
                     title = f.get("primary", "").strip()
@@ -159,6 +164,24 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
                                  start_date=start[:40], end_date=end[:40],
                                  graduation_year=int(years[-1]) if years else None, grade=f.get("grade", "")[:80],
                                  location=f.get("location", "")[:200], sort_order=pos))
+                existing_edu.add(_norm(inst))
+                counts["education"] += 1
+        elif kind == "education" and layout == "table":
+            for pos, cells in enumerate(sec["rows"]):
+                years = [c for c in cells if re.fullmatch(r"\s*(?:19|20)\d{2}(?:\s*[–—-]+\s*(?:19|20)\d{2})?\s*", c)]
+                rest = [c for c in cells if c not in years]
+                if not rest:
+                    continue
+                degree, _, inst = rest[0].partition(", ")
+                inst = inst or rest[0]
+                grade = rest[1] if len(rest) > 1 else ""
+                if _norm(inst) in existing_edu:
+                    continue
+                yrs = re.findall(r"(?:19|20)\d{2}", " ".join(years))
+                db.add(Education(user_id=user_id, institution=inst.strip()[:200], degree=degree.strip()[:200],
+                                 start_date=yrs[0] if len(yrs) > 1 else "", end_date=yrs[-1] if yrs else "",
+                                 graduation_year=int(yrs[-1]) if yrs else None, grade=grade.strip()[:80],
+                                 sort_order=pos))
                 existing_edu.add(_norm(inst))
                 counts["education"] += 1
         elif kind in ("certifications", "achievements") and layout in ("items", "entries"):

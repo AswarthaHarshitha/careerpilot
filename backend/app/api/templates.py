@@ -29,6 +29,27 @@ def template_out(t: ResumeTemplate, default_id: int | None) -> dict:
         "has_preview": t.preview_pdf is not None, "is_default": t.id == default_id,
         "sections": summarize_structure(t.structure),
         "header": {k: v for k, v in (t.structure.get("header") or {}).items() if k != "span"},
+        "analysis_pending": bool(t.structure.get("analysis_pending")) and not t.source_text,
+        "has_original_pdf": t.format == "pdf" and bool(t.source_bytes),
+        "fingerprint": _fingerprint_summary(t.structure.get("fingerprint")),
+        "comparison": t.structure.get("comparison"),
+        "template_lock": True,
+    }
+
+
+def _fingerprint_summary(fp: dict | None) -> dict | None:
+    if not fp:
+        return None
+    return {
+        "pages": fp["page"]["count"], "page_size": f"{fp['page']['width']:.0f} x {fp['page']['height']:.0f} pt",
+        "layout": "Two-column" if fp["columns"]["count"] == 2 else "One-column",
+        "text": "Scanned (read with OCR)" if fp.get("ocr") else "Selectable",
+        "font": fp["fonts"]["detected"], "body_size": fp["body"]["size"],
+        "margins": fp["margins"], "section_order": fp["section_order"],
+        "heading_style": " ".join(x for x in ("bold" if fp["heading"]["bold"] else "",
+                                              "small caps" if fp["heading"]["caps"] else "",
+                                              "rule below" if fp["heading"]["rule"] else "") if x),
+        "bullet": fp["bullet"]["char"] if fp.get("bullet") else None,
     }
 
 
@@ -81,8 +102,28 @@ def _structure_detail(structure: dict) -> list[dict]:
             item["items"] = [it["text"] for it in s["items"]]
         elif s["layout"] == "paragraph":
             item["text"] = s["paragraph"]["text"]
+        elif s["layout"] == "table":
+            item["items"] = [" · ".join(c for c in row if c) for row in s.get("rows", [])]
         out.append(item)
     return out
+
+
+@router.post("/from-profile")
+def from_profile(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services.resumes import create_template_from_profile
+
+    tpl, task_id = create_template_from_profile(db, user.id)
+    settings = db.get(UserSettings, user.id)
+    return {"template": template_out(tpl, settings.default_template_id), "task_id": task_id}
+
+
+@router.get("/{tid}/original.pdf")
+def original_pdf(tid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    t = _owned(db, user.id, tid)
+    if t.format != "pdf" or not t.source_bytes:
+        raise NotFound("Original PDF")
+    return Response(t.source_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=original.pdf"})
 
 
 @router.get("/{tid}/preview.pdf")

@@ -55,8 +55,13 @@ def test_profile_crud(auth_client):
 
 def test_template_upload_rejects_pdf_and_unsafe(auth_client):
     c = auth_client
-    r = c.post("/api/templates", files={"file": ("resume.pdf", b"%PDF-1.4 x", "application/pdf")})
-    assert r.status_code == 400 and r.json()["error"]["code"] == "pdf_template"
+    r = c.post("/api/templates", files={"file": ("resume.pdf", b"not a pdf", "application/pdf")})
+    assert r.status_code == 400
+    r = c.post("/api/templates", files={"file": ("resume.pdf", b"%PDF-1.4 broken", "application/pdf")})
+    assert r.status_code == 200  # accepted; the analysis then explains why it cannot be read
+    run_tasks()
+    task = c.get(f"/api/tasks/{r.json()['task_id']}").json()
+    assert task["status"] == "failed" and task["result"]["error"]["code"] == "pdf_unreadable"
     bad = (FIXTURES / "templates" / "jake_style.tex").read_text().replace("\\begin{document}",
                                                                          "\\immediate\\write18{id}\\begin{document}")
     r = c.post("/api/templates", files={"file": ("x.tex", bad.encode(), "text/plain")})
@@ -174,6 +179,6 @@ def test_suggested_project_is_never_evidence_until_verified(auth_client):
     run_tasks()
     job_id = r.json()["job"]["id"]
     s = c.post(f"/api/jobs/{job_id}/suggested-projects", json={"gap_keys": ["kubernetes", "aws"]}).json()
-    assert s["status"] == "not_built" and "Kubernetes" in s["plan"]["coding_prompt"]
+    assert s["status"] == "idea" and "Kubernetes" in s["plan"]["coding_prompt"]
     assert c.get("/api/projects").json() == []  # a plan is not a project
     assert c.post(f"/api/jobs/{job_id}/suggested-projects", json={"gap_keys": ["rust"]}).status_code == 400

@@ -1,4 +1,3 @@
-import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
@@ -12,6 +11,7 @@ from app.core.db import get_db
 from app.core.errors import AppError
 from app.models import Application, Job, ResumeTemplate, ResumeVersion, User
 from app.services import resumes as svc
+from app.services.naming import resume_filename
 
 router = APIRouter(prefix="/api", tags=["resumes"])
 
@@ -26,12 +26,14 @@ def version_out(v: ResumeVersion, job: Job | None = None, full: bool = False) ->
         "approved_at": v.approved_at.isoformat() if v.approved_at else None, "parent_id": v.parent_id,
         "summary": {"ats": (v.ats_report or {}).get("summary", {}), "recruiter": (v.recruiter_report or {})
                     .get("summary", {})},
+        "export_blocked": v.export_blocked,
+        "quality_counts": (v.quality_report or {}).get("counts", {}),
     }
     if job is not None:
         out["job"] = {"id": job.id, "company": job.company, "role_title": job.role_title}
     if full:
         out.update({"content": v.content, "changes": v.changes, "ats_report": v.ats_report,
-                    "recruiter_report": v.recruiter_report})
+                    "recruiter_report": v.recruiter_report, "quality_report": v.quality_report, "config": v.config})
     return out
 
 
@@ -67,10 +69,7 @@ def get_version(vid: int, user: User = Depends(current_user), db: Session = Depe
 
 
 def _filename(v: ResumeVersion, db: Session, ext: str) -> str:
-    job = db.get(Job, v.job_id) if v.job_id else None
-    parts = [job.company, job.role_title, f"v{v.version_number}"] if job else [v.label]
-    name = "_".join(re.sub(r"[^A-Za-z0-9]+", "-", p).strip("-") for p in parts if p)[:120] or "resume"
-    return f"{name}.{ext}"
+    return resume_filename(db, v, ext)
 
 
 @router.get("/resumes/{vid}/pdf")
@@ -78,6 +77,8 @@ def download_pdf(vid: int, download: bool = False, user: User = Depends(current_
     v = svc.get_version(db, user.id, vid)
     if v.pdf is None:
         raise AppError(v.render_error or "This version has no PDF.", code="no_pdf", status_code=404)
+    if download:
+        _require_export(v)
     disp = "attachment" if download else "inline"
     return Response(v.pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'{disp}; filename="{_filename(v, db, "pdf")}"'})
@@ -86,6 +87,7 @@ def download_pdf(vid: int, download: bool = False, user: User = Depends(current_
 @router.get("/resumes/{vid}/source")
 def download_source(vid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     v = svc.get_version(db, user.id, vid)
+    _require_export(v)
     if v.source_bytes:
         return Response(v.source_bytes,
                         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -104,6 +106,22 @@ class ContentIn(BaseModel):
 def edit_version(vid: int, body: ContentIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     v = svc.update_content(db, svc.get_version(db, user.id, vid), body.content)
     return version_out(v, full=True)
+
+
+def _require_export(v: ResumeVersion) -> None:
+    if v.export_blocked:
+        failing = [c["label"] for c in (v.quality_report or {}).get("checks", []) if c["status"] == "fail"]
+        raise AppError("This resume can't be exported until its checks pass.", code="export_blocked", status_code=409,
+                       hint="Failing: " + "; ".join(failing) if failing else "")
+
+
+class LengthIn(BaseModel):
+    option: str = Field(max_length=40)
+
+
+@router.post("/resumes/{vid}/resolve-length")
+def resolve_length(vid: int, body: LengthIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return version_out(svc.resolve_length(db, svc.get_version(db, user.id, vid), body.option), full=True)
 
 
 class SectionIn(BaseModel):
@@ -126,6 +144,7 @@ def approve(vid: int, user: User = Depends(current_user), db: Session = Depends(
     v = svc.get_version(db, user.id, vid)
     if v.pdf is None:
         raise AppError("This version has no PDF yet, so it can't be approved.", code="no_pdf")
+    _require_export(v)
     v.status = "approved"
     v.approved_at = datetime.now(UTC)
     if v.job_id:
@@ -165,3 +184,95 @@ def template_versions(tid: int, user: User = Depends(current_user), db: Session 
         return []
     return [version_out(v) for v in db.scalars(select(ResumeVersion).where(ResumeVersion.template_id == tid,
                                                                            ResumeVersion.user_id == user.id))]
+
+
+# --- live editor ----------------------------------------------------------------------------------
+
+class OpsIn(BaseModel):
+    ops: list[dict] = Field(min_length=1, max_length=100)
+    base_revision: int | None = None
+    label: str = Field(default="Edited", max_length=200)
+
+
+class RevIn(BaseModel):
+    base_revision: int | None = None
+
+
+class RestoreIn(BaseModel):
+    number: int = Field(ge=1)
+    base_revision: int | None = None
+
+
+class AssistantIn(BaseModel):
+    instruction: str = Field(min_length=1, max_length=2000)
+    selection: list[str] = Field(default_factory=list, max_length=20)
+    base_revision: int | None = None
+    apply: bool = False
+    ops: list[dict] | None = None  # apply a previously previewed plan exactly as shown
+
+
+@router.get("/resumes/{vid}/editor")
+def editor_state(vid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services import editor
+
+    return editor.payload(db, svc.get_version(db, user.id, vid))
+
+
+@router.post("/resumes/{vid}/ops")
+def editor_ops(vid: int, body: OpsIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services import editor
+
+    v, changed = editor.apply(db, svc.get_version(db, user.id, vid), body.ops, source="user", label=body.label,
+                              base_revision=body.base_revision)
+    return {**editor.payload(db, v), "changed": changed}
+
+
+@router.post("/resumes/{vid}/undo")
+def editor_undo(vid: int, body: RevIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services import editor
+
+    return editor.payload(db, editor.undo(db, svc.get_version(db, user.id, vid), body.base_revision))
+
+
+@router.post("/resumes/{vid}/redo")
+def editor_redo(vid: int, body: RevIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services import editor
+
+    return editor.payload(db, editor.redo(db, svc.get_version(db, user.id, vid), body.base_revision))
+
+
+@router.post("/resumes/{vid}/restore")
+def editor_restore(vid: int, body: RestoreIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services import editor
+
+    return editor.payload(db, editor.restore(db, svc.get_version(db, user.id, vid), body.number, body.base_revision))
+
+
+@router.post("/resumes/{vid}/assistant")
+def editor_assistant(vid: int, body: AssistantIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Plans a change from a natural-language request. Small, clear changes are applied at once; broad ones come
+    back as a preview and are applied only when the user confirms (apply=true with the previewed ops)."""
+    from app.llm.provider import get_provider
+    from app.models import UserSettings
+    from app.resume import assistant
+    from app.services import editor
+
+    v = svc.get_version(db, user.id, vid)
+    editor.ensure_history(db, v)
+    if body.ops is not None:
+        v, changed = editor.apply(db, v, body.ops, source="assistant", label=body.instruction[:200],
+                                  base_revision=body.base_revision)
+        return {"applied": True, "state": editor.payload(db, v), "changed": changed}
+    job = db.get(Job, v.job_id) if v.job_id else None
+    focus = list(dict.fromkeys(r.label for r in job.requirements if r.kind == "skill")) if job else []
+    plan = assistant.plan(v.content, body.instruction, body.selection, get_provider(db.get(UserSettings, user.id)),
+                          focus)
+    result = {"summary": plan.summary, "message": plan.message, "refused": plan.refused, "ops": plan.ops,
+              "broad": plan.broad}
+    if not plan.ops:
+        return {"applied": False, **result}
+    if plan.broad and not body.apply:
+        return {"applied": False, "preview": assistant.preview(v.content, plan.ops), **result}
+    v, changed = editor.apply(db, v, plan.ops, source="assistant", label=body.instruction[:200],
+                              base_revision=body.base_revision)
+    return {"applied": True, "state": editor.payload(db, v), "changed": changed, **result}
