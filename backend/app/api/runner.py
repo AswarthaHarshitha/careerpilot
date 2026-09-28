@@ -1,5 +1,7 @@
 """Endpoints used by the local apply agent (authenticated with a runner token, not a browser session)."""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -46,6 +48,8 @@ def claim(runner=Depends(current_runner), db: Session = Depends(get_db)):
 def get_instructions(sid: int, runner=Depends(current_runner), db: Session = Depends(get_db)):
     user, token = runner
     s = svc.get_runner_session(db, user.id, token.id, sid)
+    s.last_heartbeat_at = datetime.now(UTC)
+    db.commit()
     return instructions(db, s)
 
 
