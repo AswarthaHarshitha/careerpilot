@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# Local data and secrets
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+/data/
+backend/var/
+runner-profile/
+*.log
+logs/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Test output
+e2e/output/
+test-results/
+playwright-report/
+.vercel

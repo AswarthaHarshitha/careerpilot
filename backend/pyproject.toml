@@ -1,0 +1,65 @@
+[project]
+name = "careerpilot"
+version = "0.1.0"
+description = "Personal job application workspace: job analysis, evidence-based resume tailoring and assisted applications."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "email-validator>=2.2",
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.10",
+    "cryptography>=43",
+    "httpx>=0.28",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.3",
+    "python-dateutil>=2.9",
+    "pypdf>=5.1",
+    "python-docx>=1.1",
+    "python-multipart>=0.0.18",
+]
+
+[project.optional-dependencies]
+automation = ["playwright>=1.49"]
+
+[project.scripts]
+careerpilot-runner = "app.automation.runner:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "playwright>=1.49",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "browser: tests that drive a real Chromium through Playwright",
+    "latex: tests that compile LaTeX with Tectonic",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101", "B008", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108", "S603", "S607"]
+"migrations/**" = ["E501"]
