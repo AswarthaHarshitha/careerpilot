@@ -158,6 +158,12 @@ def scan_account(ctx: TaskContext) -> dict:
     with ctx.step("Listing repositories"):
         repos = gh.list_repos(settings.github_username, settings.include_private_repos)
         repos = [r for r in repos if settings.include_forks or not r.fork]
+        # The special <username>/<username> repository is a profile README, not a project: its claims are not evidence.
+        profile_repo = f"{settings.github_username}/{settings.github_username}".lower()
+        repos = [r for r in repos if r.full_name.lower() != profile_repo]
+        for stale in db.scalars(select(Project).where(Project.user_id == user_id,
+                                                      Project.repo_full_name.ilike(profile_repo))):
+            stale.hidden = True
     scanned, skipped, failed = 0, 0, []
     label = "Inspecting repositories"
     ctx._set_step(label, "running", f"0 of {len(repos)}")

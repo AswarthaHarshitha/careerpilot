@@ -86,24 +86,52 @@ def _match_entry(entries: list[dict], name: str, url: str = "") -> int | None:
     return None
 
 
+IMPERATIVE = {"import", "create", "track", "manage", "view", "upload", "search", "export", "send", "detect", "generate",
+              "sync", "connect", "add", "edit", "delete", "schedule", "book", "browse", "filter", "compare", "download",
+              "share", "monitor", "run", "build", "chat", "ask", "record", "convert", "analyze", "analyse", "review"}
+
+
+def _gerund(verb: str) -> str:
+    v = verb.lower()
+    if v.endswith("e") and not v.endswith("ee"):
+        return v[:-1] + "ing"
+    if v in ("run", "chat"):
+        return v + v[-1] + "ing"
+    return v + "ing"
+
+
+def _clean_description(desc: str) -> str:
+    d = re.sub(r"\s*\([^)]*\)\s*$", "", desc.strip().rstrip("."))  # trailing "(FastAPI, React)" tech lists
+    d = re.split(r"\s+[-\u2013\u2014]\s+|;\s+|\.\s+", d, maxsplit=1)[0]
+    d = d.replace(": ", " with ", 1) if ": " in d else d
+    words = d.split()
+    return " ".join(words[:24]) if words else ""
+
+
 def evidence_bullets(p: ProjectInput, focus: JobFocus) -> list[str]:
-    """Bullets for a project that has no user-written bullets, assembled only from verified facts:
-    the repository description the user wrote and its verified technologies/features."""
+    """Bullets for a project with no user-written bullets, assembled only from verified facts: the repository
+    description the user wrote and its verified technologies and README features. Marked for review in the UI."""
     out = []
-    tech = [t for t in p.tech][:5]
-    desc = p.description.strip().rstrip(".")
-    if desc:
-        stem = desc[0].upper() + desc[1:]
-        if tech:
-            out.append(f"{stem}; built with {_join(tech)}.")
-        else:
-            out.append(stem + ".")
+    tech = p.tech[:5]
+    desc = _clean_description(p.description)
+    using = f" using {_join(tech)}" if tech else ""
+    if desc and not re.search(r"\byou(r|rs)?\b", desc, re.I):
+        lead = desc[0].lower() + desc[1:]
+        article = "" if re.match(r"(a|an|the)\s", lead) else ("an " if lead[:1] in "aeiou" else "a ")
+        out.append(f"Built {p.title}, {article}{lead}{using}.")
     elif tech:
-        out.append(f"Built {p.title} with {_join(tech)}.")
-    feats = sorted(p.features, key=lambda f: -relevance(f, focus))
-    for f in feats[:2]:
-        f = f.rstrip(".")
-        out.append(f[0].upper() + f[1:] + ".")
+        out.append(f"Built {p.title}{using}.")
+    for f in sorted(p.features, key=lambda f: -relevance(f, focus))[:2]:
+        f = f.strip().rstrip(".")
+        if re.search(r"\byou(r|rs)?\b", f, re.I) and len(f.split()) > 3:
+            continue
+        first, _, rest = f.partition(" ")
+        if first.lower() in IMPERATIVE:
+            out.append(f"Supports {_gerund(first)} {rest}.")
+        elif first.lower().endswith("ed"):
+            out.append(f[0].upper() + f[1:] + ".")
+        else:
+            out.append(f"Implemented {f[0].lower() + f[1:]}.")
     return out
 
 

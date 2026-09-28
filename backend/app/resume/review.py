@@ -23,6 +23,7 @@ STRONG_VERBS = {
     "streamlined", "containerized", "containerised", "orchestrated", "secured", "authored", "coordinated", "managed",
     "prototyped", "shipped", "scaled", "instrumented", "documented", "extended", "added", "introduced", "enabled",
 }
+STUFFING_THRESHOLD = 9
 WEAK_OPENERS = re.compile(r"^(worked on|responsible for|helped|assisted|involved in|participated in|tasked with|"
                           r"duties included|was part of|did)\b", re.I)
 
@@ -51,7 +52,7 @@ def ats_check(pdf_text: str, content: dict, requirements: list[dict], matches: d
     """requirements: [{id, kind, label, canonical, importance}]; matches: requirement id -> match status."""
     text = unicodedata.normalize("NFKC", pdf_text or "")
     joined = _join_split_words(text)
-    present = {m.key: m.alias for m in find_skills(joined)}
+    present = {m.key: joined[m.start:m.end] for m in find_skills(joined)}
     findings: list[dict] = []
 
     coverage = {}
@@ -80,7 +81,8 @@ def ats_check(pdf_text: str, content: dict, requirements: list[dict], matches: d
     jd_terms = {r["canonical"]: r["label"] for r in requirements if r["kind"] == "skill" and r["canonical"]}
     for key, jd_label in jd_terms.items():
         alias = present.get(key)
-        if alias and _loose(alias) != _loose(jd_label) and _loose(jd_label) not in _loose(joined):
+        # only a different name for the skill counts (e.g. "Postgres" vs "PostgreSQL"), not case or plural
+        if alias and _loose(alias).rstrip("s") != _loose(jd_label).rstrip("s") and _loose(jd_label) not in _loose(joined):
             terminology.append({"resume": alias, "posting": jd_label})
     if terminology:
         findings.append({"severity": "low", "title": "Terminology differs from the posting",
@@ -115,10 +117,11 @@ def ats_check(pdf_text: str, content: dict, requirements: list[dict], matches: d
         findings.append({"severity": "medium", "title": "Parsing risk", "detail": r})
 
     counts = Counter(m.key for m in find_skills(joined))
-    stuffing = [display_name(k) for k, n in counts.items() if n >= 6]
+    stuffing = [display_name(k) for k, n in counts.items() if n >= STUFFING_THRESHOLD]
     if stuffing:
         findings.append({"severity": "medium", "title": "Possible keyword repetition",
-                         "detail": ", ".join(stuffing) + " appear 6+ times; repetition reads as stuffing."})
+                         "detail": ", ".join(stuffing) + f" appear {STUFFING_THRESHOLD}+ times; repetition reads as "
+                                                         "stuffing."})
 
     bullets = _resume_bullets(content)
     long_bullets = [b for _, b in bullets if len(b.split()) > 35]

@@ -263,7 +263,7 @@ def _generic(url: str, platform: str) -> RawPosting:
         if _s(ld.get("jobLocationType")).upper() == "TELECOMMUTE":
             post.workplace_type = "remote"
         et = ld.get("employmentType")
-        post.employment_type = ", ".join(et) if isinstance(et, list) else _s(et)
+        post.employment_type = ", ".join(_employment(x) for x in (et if isinstance(et, list) else [et]) if x)
         ident = ld.get("identifier")
         if isinstance(ident, dict):
             post.job_code = _s(ident.get("value"))
@@ -316,6 +316,15 @@ def _ld_location(ld: dict) -> str:
         elif isinstance(addr, str):
             out.append(addr)
     return " / ".join(o for o in out if o)
+
+
+_EMPLOYMENT = {"FULL_TIME": "Full-time", "PART_TIME": "Part-time", "CONTRACTOR": "Contract", "TEMPORARY": "Temporary",
+               "INTERN": "Internship", "VOLUNTEER": "Volunteer", "PER_DIEM": "Per diem", "OTHER": "Other"}
+
+
+def _employment(v) -> str:
+    raw = _s(v)
+    return _EMPLOYMENT.get(raw.upper().replace("-", "_").replace(" ", "_"), raw)
 
 
 def _s(v) -> str:

@@ -1,0 +1,156 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/source-serif-4';
+@import '@fontsource-variable/jetbrains-mono';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. Warm neutrals with one restrained accent; status colours only for evidence states. */
+:root {
+  --bg: #f5f3ee;
+  --surface: #fbfaf7;
+  --surface-2: #efece5;
+  --surface-3: #e6e2d9;
+  --border: #e2ddd3;
+  --border-strong: #cdc6b8;
+  --ink: #1c1b19;
+  --ink-2: #45413a;
+  --muted: #7a746a;
+  --faint: #a39d92;
+  --accent: #9a4a24;
+  --accent-hover: #85401f;
+  --accent-soft: #f2e5db;
+  --accent-ink: #fbf6f1;
+  --strong: #3e6a4d;
+  --strong-soft: #e3ece4;
+  --partial: #94701d;
+  --partial-soft: #f3ead3;
+  --missing: #a03f2c;
+  --missing-soft: #f4e1dc;
+  --verify: #4c5e77;
+  --verify-soft: #e2e7ee;
+  --shadow: 0 1px 2px rgb(28 27 25 / 0.04), 0 4px 16px -8px rgb(28 27 25 / 0.08);
+  --shadow-lg: 0 2px 6px rgb(28 27 25 / 0.05), 0 18px 48px -18px rgb(28 27 25 / 0.22);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #161513;
+  --surface: #1c1b18;
+  --surface-2: #23211e;
+  --surface-3: #2c2a26;
+  --border: #2f2c28;
+  --border-strong: #423e38;
+  --ink: #ece8e1;
+  --ink-2: #c9c3b9;
+  --muted: #968f84;
+  --faint: #6f695f;
+  --accent: #d08a5c;
+  --accent-hover: #dc9a6e;
+  --accent-soft: #3a2a20;
+  --accent-ink: #1a1512;
+  --strong: #8fb79a;
+  --strong-soft: #22302676;
+  --partial: #d4b064;
+  --partial-soft: #3a312066;
+  --missing: #e0907e;
+  --missing-soft: #3d242066;
+  --verify: #9fb1ca;
+  --verify-soft: #242c3866;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px -8px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.3), 0 18px 48px -18px rgb(0 0 0 / 0.7);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-strong: var(--strong);
+  --color-strong-soft: var(--strong-soft);
+  --color-partial: var(--partial);
+  --color-partial-soft: var(--partial-soft);
+  --color-missing: var(--missing);
+  --color-missing-soft: var(--missing-soft);
+  --color-verify: var(--verify);
+  --color-verify-soft: var(--verify-soft);
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4 Variable', ui-serif, Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;
+  --shadow-card: var(--shadow);
+  --shadow-float: var(--shadow-lg);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  font-feature-settings: 'cv11', 'ss01', 'tnum' 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Thin, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.prose-jd {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  color: var(--ink-2);
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
