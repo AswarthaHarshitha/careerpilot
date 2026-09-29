@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Archive, Check, ChevronDown, ExternalLink, FileText, Hammer, Pencil, RefreshCw, Send, Sparkles,
-} from 'lucide-react'
-import { useMemo, useState } from 'react'
+  Archive, Check, ChevronDown, ExternalLink, FileText, Hammer, Pencil, RefreshCw, Send, Sparkles, GraduationCap } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { InstructionsEditor } from '../components/InstructionsEditor'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Page } from '../components/AppShell'
 import {
   Badge, Button, Card, CardHeader, Dialog, ErrorState, EvidenceBadge, Field, Input, LoadingRows, MatchBadge, Select,
@@ -37,6 +36,7 @@ export default function JobDetail() {
 
   return (
     <Page>
+      <HashScroll ready={j.analysis_state === 'ready'} />
       <JobHeader j={j} />
       <AnimatePresence>
         {analyzing && (
@@ -63,6 +63,15 @@ export default function JobDetail() {
   )
 }
 
+function HashScroll({ ready }: { ready: boolean }) { useHashScroll(ready); return null }
+
+function useHashScroll(ready: boolean) {
+  const loc = useLocation()
+  useEffect(() => {
+    if (ready && loc.hash) setTimeout(() => document.getElementById(loc.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+  }, [ready, loc.hash])
+}
+
 function JobHeader({ j }: { j: Job }) {
   const [editing, setEditing] = useState(false)
   const qc = useQueryClient()
@@ -81,6 +90,7 @@ function JobHeader({ j }: { j: Job }) {
     j.job_code && { label: 'Job ID', value: <span className="font-mono text-[12.5px]">{j.job_code}</span> },
     { label: 'Location', value: <>{j.location || '—'}{j.workplace_type ? <span className="text-muted"> · {j.workplace_type}</span> : ''}</> },
     j.employment_type && { label: 'Type', value: j.employment_type },
+    j.salary_text && { label: 'Salary (as posted)', value: j.salary_text },
     {
       label: 'Deadline', value: j.deadline
         ? <span title={j.deadline_source} className={cx((j.days_remaining ?? 99) <= 3 ? 'text-missing' : '')}>{fmtDate(j.deadline)} <span className="text-muted">· {daysLabel(j.days_remaining)}</span></span>
@@ -104,6 +114,7 @@ function JobHeader({ j }: { j: Job }) {
               {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
             </Select>
           )}
+          <Link to={`/jobs/${j.id}/prep`}><Button size="md" icon={<GraduationCap className="size-3.5" />}>Research & interview prep</Button></Link>
           <Button size="md" variant="ghost" icon={<Pencil className="size-3.5" />} onClick={() => setEditing(true)}>Edit</Button>
           {(j.application_url || j.job_url) && (
             <a href={j.application_url || j.job_url} target="_blank" rel="noreferrer noopener">
@@ -482,7 +493,7 @@ function NotesCard({ j }: { j: Job }) {
   const qc = useQueryClient()
   const save = useMutation({ mutationFn: () => patch(`/api/jobs/${j.id}`, { notes }), onSuccess: () => qc.invalidateQueries({ queryKey: ['job', String(j.id)] }) })
   return (
-    <Card>
+    <Card id="notes" className="scroll-mt-6">
       <CardHeader title="My notes & ideas" subtitle={save.isPending ? 'Saving…' : notes !== (j.notes ?? '') ? 'Unsaved' : undefined} />
       <div className="p-3">
         <Textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== (j.notes ?? '') && save.mutate()}

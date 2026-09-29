@@ -90,6 +90,11 @@ def set_status(db: Session, a: Application, status: str, note: str = "", *, veri
                 f"{job.company if job else ''}.".replace("  ", " "),
             )
         )
+        if job is not None and not job.interview_prep:
+            # after submitting, an interview workspace is prepared in the background
+            from app.tasks.queue import enqueue
+
+            enqueue(db, a.user_id, "interview_prep", {"job_id": job.id}, ["Preparing questions"])
     db.add(
         ApplicationEvent(
             application_id=a.id,

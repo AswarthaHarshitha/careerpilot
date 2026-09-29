@@ -26,6 +26,7 @@ from app.models import (
     ResumeVersion,
     User,
     UserProfile,
+    UserSettings,
 )
 from app.services.jobs import days_remaining
 
@@ -183,6 +184,50 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
             }
         )
 
+    # skill gaps: required skills with no evidence, across jobs still worth applying to
+    open_jobs = [a.job_id for a in apps if a.status in ("saved", "resume_ready", "ready_to_apply", "in_progress")]
+    gap_jobs: dict[str, set[int]] = {}
+    if open_jobs:
+        for job_id, label in db.execute(
+            select(JobMatch.job_id, JobRequirement.label)
+            .join(JobRequirement, JobRequirement.id == JobMatch.requirement_id)
+            .where(
+                JobMatch.job_id.in_(open_jobs),
+                JobMatch.status == "missing",
+                JobRequirement.importance == "required",
+                JobRequirement.kind == "skill",
+            )
+        ).all():
+            gap_jobs.setdefault(label, set()).add(job_id)
+    top_gaps = sorted(gap_jobs.items(), key=lambda kv: -len(kv[1]))[:3]
+    if top_gaps:
+        actions.append(
+            {
+                "kind": "evidence",
+                "count": len(gap_jobs),
+                "text": "Improve project evidence",
+                "items": [
+                    {
+                        "text": f"{label} — required by {len(ids)} open job{'s' if len(ids) > 1 else ''}",
+                        "job_id": min(ids),
+                    }
+                    for label, ids in top_gaps
+                ],
+            }
+        )
+    interviewing = [a for a in apps if a.status in ("interview", "assessment")]
+    if interviewing:
+        actions.append(
+            {
+                "kind": "interview",
+                "count": len(interviewing),
+                "text": "Prepare interview answers",
+                "items": [dict(card(a), href=f"/jobs/{a.job_id}/prep") for a in interviewing[:5]],
+            }
+        )
+    settings = db.get(UserSettings, user.id)
+    ideas = [line.strip() for line in (settings.notes or "").splitlines() if line.strip()][-5:][::-1]
+
     pipeline = [{"stage": stage, "count": sum(1 for a in apps if a.status in statuses)} for stage, statuses in PIPELINE]
     recent = sorted(apps, key=lambda a: jobs[a.job_id].created_at, reverse=True)[:8]
     counts = {}
@@ -200,6 +245,16 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
                 c["missing"] += status == "missing"
     return {
         "greeting_name": first,
+        "command_center": {
+            "applications": len(apps),
+            "ready_to_apply": len(ready),
+            "in_progress": sum(1 for a in apps if a.status == "in_progress"),
+            "interviews": sum(1 for a in apps if a.status == "interview"),
+            "follow_ups": len([r for r in reminders if r.kind == "follow_up"]),
+            "resume_versions": len(versions),
+            "skill_gaps": len(gap_jobs),
+        },
+        "career_ideas": ideas,
         "stats": {
             "active_applications": len(active),
             "resume_versions": len(versions),

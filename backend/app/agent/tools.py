@@ -306,6 +306,37 @@ def scan_github(ctx: Ctx) -> Result:
     )
 
 
+@tool("research_company", WRITE, "Research the company from its public pages (facts cite their source)", ("job",))
+def research_company(ctx: Ctx) -> Result:
+    from app.services import prep
+
+    job = _job(ctx)
+    task_id = prep.start_research(ctx.db, ctx.user_id, job.id)
+    site = prep.company_site(job)
+    msg = (
+        f"Researching {job.company} from {site}."
+        if site
+        else (
+            f"Researching {job.company}. The job links only to an applicant-tracking site, so add the company "
+            "website on the job page for a fuller picture."
+        )
+    )
+    return Result(msg + " Facts will cite the page they came from.", f"/jobs/{job.id}/prep", data={"task_id": task_id})
+
+
+@tool("prepare_interview", WRITE, "Build an interview preparation workspace for the job", ("job",))
+def prepare_interview(ctx: Ctx) -> Result:
+    from app.services import prep
+
+    job = _job(ctx)
+    task_id = prep.start_prep(ctx.db, ctx.user_id, job.id)
+    return Result(
+        f"Preparing likely interview topics for {_label(job)} from your resume, evidence and the job.",
+        f"/jobs/{job.id}/prep",
+        data={"task_id": task_id},
+    )
+
+
 # --- EXTERNAL -----------------------------------------------------------------------------------------
 
 

@@ -17,7 +17,9 @@ type Card_ = {
 type Dash = {
   greeting_name: string
   stats: { active_applications: number; resume_versions: number; upcoming_deadlines: number; interviews: number; needs_attention: number }
-  actions: { kind: string; count: number; text: string; items: (Card_ & { reminder_id?: number; text?: string })[] }[]
+  command_center: { applications: number; ready_to_apply: number; in_progress: number; interviews: number; follow_ups: number; resume_versions: number; skill_gaps: number }
+  career_ideas: string[]
+  actions: { kind: string; count: number; text: string; items: (Card_ & { reminder_id?: number; text?: string; href?: string })[] }[]
   pipeline: { stage: string; count: number }[]
   recent_jobs: Card_[]
   upcoming_deadlines: Card_[]
@@ -33,6 +35,8 @@ const ACTION_ICON: Record<string, React.ReactNode> = {
   overdue: <AlarmClock className="size-4 text-missing" />,
   follow_up: <Send className="size-4 text-verify" />,
   failed: <CircleAlert className="size-4 text-missing" />,
+  evidence: <FileCheck2 className="size-4 text-verify" />,
+  interview: <Send className="size-4 text-accent" />,
 }
 
 export default function Dashboard() {
@@ -60,17 +64,20 @@ export default function Dashboard() {
 }
 
 function DashboardBody({ d, onImport }: { d: Dash; onImport: () => void }) {
+  const c = d.command_center
   const stats = [
-    { label: 'Active applications', value: d.stats.active_applications, to: '/applications' },
-    { label: 'Resume versions', value: d.stats.resume_versions, to: '/resumes' },
-    { label: 'Upcoming deadlines', value: d.stats.upcoming_deadlines, to: '/applications' },
-    { label: 'Interviews', value: d.stats.interviews, to: '/applications' },
-    { label: 'Needs attention', value: d.stats.needs_attention, to: '/applications', alert: d.stats.needs_attention > 0 },
+    { label: 'Applications', value: c.applications, to: '/applications' },
+    { label: 'Ready to apply', value: c.ready_to_apply, to: '/applications', alert: c.ready_to_apply > 0 },
+    { label: 'In progress', value: c.in_progress, to: '/applications' },
+    { label: 'Interviews', value: c.interviews, to: '/applications' },
+    { label: 'Follow-ups', value: c.follow_ups, to: '/applications' },
+    { label: 'Resume versions', value: c.resume_versions, to: '/resumes' },
+    { label: 'Skill gaps', value: c.skill_gaps, to: '/projects' },
   ]
   return (
     <div className="space-y-6">
       {!d.has_jobs && <SetupChecklist onImport={onImport} />}
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4 lg:grid-cols-7">
         {stats.map((s, i) => (
           <Link key={s.label} to={s.to} className={cx('group bg-surface px-4 py-3.5 transition-colors hover:bg-surface-2/60', i === stats.length - 1 && 'col-span-2 sm:col-span-1')}>
             <div className="text-[12px] text-muted">{s.label}</div>
@@ -98,9 +105,11 @@ function DashboardBody({ d, onImport }: { d: Dash; onImport: () => void }) {
                         {it.reminder_id ? (
                           <ReminderRow id={it.reminder_id} text={it.text ?? ''} appId={it.application_id} />
                         ) : (
-                          <Link to={a.kind === 'review' || a.kind === 'ready' ? `/applications/${it.application_id}` : `/jobs/${it.job_id}`}
+                          <Link to={it.href ?? (a.kind === 'review' || a.kind === 'ready' ? `/applications/${it.application_id}` : `/jobs/${it.job_id}`)}
                             className="group flex items-center gap-2 text-ink-2 hover:text-ink">
-                            <span className="truncate">{it.role_title || 'Untitled role'} <span className="text-muted">· {it.company || 'Unknown company'}</span></span>
+                            {a.kind === 'evidence' ? <span className="truncate">{it.text}</span> : (
+                              <span className="truncate">{a.kind === 'ready' ? 'Apply — ' : a.kind === 'interview' ? 'Prepare — ' : ''}{it.role_title || 'Untitled role'} <span className="text-muted">· {it.company || 'Unknown company'}</span></span>
+                            )}
                             {it.days_remaining !== null && it.days_remaining !== undefined && (a.kind === 'deadline' || a.kind === 'overdue') &&
                               <span className="shrink-0 text-[12px] text-missing">{daysLabel(it.days_remaining)}</span>}
                             <ArrowRight className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -186,6 +195,12 @@ function DashboardBody({ d, onImport }: { d: Dash; onImport: () => void }) {
           </div>
         )}
       </div>
+      {d.career_ideas.length > 0 && (
+        <Card>
+          <CardHeader title="Career ideas" subtitle="Saved with ⌘K → “Add career idea”. Career-wide, not tied to one job." />
+          <ul className="divide-y divide-line">{d.career_ideas.map((x) => <li key={x} className="px-4 py-2 text-[13px] text-ink-2">{x}</li>)}</ul>
+        </Card>
+      )}
     </div>
   )
 }

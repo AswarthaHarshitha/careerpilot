@@ -85,6 +85,25 @@ export type JobDetail = JobSummary & {
   resume_instructions: ResumeInstructions
   notes: string
   resume_config: ResumeConfig | null
+  salary_text?: string
+  company_website?: string
+  research?: CompanyResearch | null
+  research_at?: string | null
+  interview_prep?: InterviewPrep | null
+  interview_prep_at?: string | null
+}
+
+export type Cited = { statement: string; source: string }
+export type CompanyResearch = {
+  website: string; sources: { url: string; title: string }[]; overview: Cited[]; technology_signals: Cited[]
+  engineering_areas: Cited[]; recent_work: Cited[]; role_context: string[]; interview_themes: string[]
+  preparation: string[]; limitations: string[]; generated_by: string
+}
+export type InterviewPrep = {
+  resume_version: number | null; label: string; technical_areas: string[]
+  project_questions: { project: string; question: string; answer_outline: string }[]
+  resume_questions: { item: string; question: string; answer_outline: string }[]
+  role_questions: string[]; behavioral: string[]; coding_topics: string[]; generated_by: string
 }
 
 export type Bullet = { text: string; original: string; origin: string; rejected?: string[] }

@@ -46,6 +46,12 @@ class Job(Base):
     notes: Mapped[str] = mapped_column(Text, default="")  # "My Notes & Ideas"
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+    # Company research (facts cite their source page) and interview preparation (labelled as suggestions).
+    company_website: Mapped[str] = mapped_column(String(300), default="")
+    research: Mapped[dict] = mapped_column(JSON, default=dict)
+    research_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    interview_prep: Mapped[dict] = mapped_column(JSON, default=dict)
+    interview_prep_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     requirements: Mapped[list["JobRequirement"]] = relationship(
         cascade="all, delete-orphan", order_by="JobRequirement.position"

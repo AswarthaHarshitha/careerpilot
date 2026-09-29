@@ -1,3 +1,4 @@
+import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -196,6 +197,38 @@ def _owned(db: Session, user_id: int, job_id: int) -> Job:
     return j
 
 
+_SALARY = re.compile(
+    r"(?:salary|compensation|pay|ctc|stipend)[^\n]{0,40}?((?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp)\s?[\d,.]+\s*(?:k|l|lpa|lakhs?|"
+    r"cr|m)?(?:\s*(?:-|–|to)\s*(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp)?\s?[\d,.]+\s*(?:k|l|lpa|lakhs?|cr|m)?)?"
+    r"(?:\s*(?:per|/)\s*(?:year|annum|month|hour|yr|mo|hr))?)",
+    re.I,
+)
+
+
+def _salary(text: str) -> str:
+    """Salary only when the posting states one; never estimated."""
+    m = _SALARY.search(text or "")
+    return m.group(1).strip() if m else ""
+
+
+class ResearchIn(BaseModel):
+    website: str = Field(default="", max_length=300)
+
+
+@router.post("/{job_id}/research")
+def start_research(job_id: int, body: ResearchIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services import prep
+
+    return {"task_id": prep.start_research(db, user.id, job_id, body.website.strip())}
+
+
+@router.post("/{job_id}/interview-prep")
+def start_interview_prep(job_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services import prep
+
+    return {"task_id": prep.start_prep(db, user.id, job_id)}
+
+
 @router.get("/{job_id}")
 def get_job(job_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     j = _owned(db, user.id, job_id)
@@ -262,6 +295,12 @@ def get_job(job_id: int, user: User = Depends(current_user), db: Session = Depen
             "analyzed_with_llm": j.analyzed_with_llm,
             "company_careers_url": j.company_careers_url,
             "ingest_method": j.ingest_method,
+            "salary_text": _salary(j.description_text),
+            "company_website": j.company_website,
+            "research": j.research or None,
+            "research_at": j.research_at.isoformat() if j.research_at else None,
+            "interview_prep": j.interview_prep or None,
+            "interview_prep_at": j.interview_prep_at.isoformat() if j.interview_prep_at else None,
             "requirements": reqs,
             "recommended_projects": recs,
             "resumes": [

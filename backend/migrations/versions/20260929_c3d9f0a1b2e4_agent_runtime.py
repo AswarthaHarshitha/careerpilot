@@ -27,6 +27,12 @@ def upgrade() -> None:
         b.add_column(sa.Column("runner_version", sa.String(length=40), nullable=False, server_default=""))
     with op.batch_alter_table("applications") as b:
         b.add_column(sa.Column("confirmation_id", sa.String(length=120), nullable=False, server_default=""))
+    with op.batch_alter_table("jobs") as b:
+        b.add_column(sa.Column("company_website", sa.String(length=300), nullable=False, server_default=""))
+        b.add_column(sa.Column("research", sa.JSON(), nullable=False, server_default="{}"))
+        b.add_column(sa.Column("research_at", sa.DateTime(timezone=True), nullable=True))
+        b.add_column(sa.Column("interview_prep", sa.JSON(), nullable=False, server_default="{}"))
+        b.add_column(sa.Column("interview_prep_at", sa.DateTime(timezone=True), nullable=True))
     with op.batch_alter_table("automation_sessions") as b:
         b.add_column(sa.Column("phase", sa.String(length=30), nullable=False, server_default=""))
         b.add_column(sa.Column("resume_nonce", sa.Integer(), nullable=False, server_default="0"))
@@ -39,6 +45,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     with op.batch_alter_table("automation_sessions") as b:
         for col in ("phase", "resume_nonce", "submit_clicked_at", "fields_total", "fields_done", "resume_uploaded"):
+            b.drop_column(col)
+    with op.batch_alter_table("jobs") as b:
+        for col in ("company_website", "research", "research_at", "interview_prep", "interview_prep_at"):
             b.drop_column(col)
     with op.batch_alter_table("applications") as b:
         b.drop_column("confirmation_id")

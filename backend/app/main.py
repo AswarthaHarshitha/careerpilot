@@ -19,7 +19,7 @@ from app.llm.router import configured
 from app.resume.latex_compile import resolve_engine
 
 # Importing registers the background task handlers.
-from app.services import github_scan  # noqa: F401
+from app.services import github_scan, prep  # noqa: F401
 from app.tasks.queue import start_workers, stop_workers
 
 log = logging.getLogger("careerpilot")

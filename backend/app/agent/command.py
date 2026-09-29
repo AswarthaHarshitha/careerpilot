@@ -47,6 +47,10 @@ def rules(text: str, ctx: T.Ctx) -> Intent | None:
         r"\bapply (the |these |those )?(changes?|edits?)\b", t
     ):
         return Intent("start_application")
+    if re.search(r"\b(research|look up|tell me about)\b.*\b(company|employer|them)\b|\bcompany research\b", t):
+        return Intent("research_company")
+    if re.search(r"\binterview\b", t):
+        return Intent("prepare_interview")
     if re.search(r"\b(generate|create|tailor|build|make)\b.*\bresume\b", t) and not re.search(r"\bone page\b", t):
         return Intent("generate_resume")
     if re.search(r"^undo\b|\bundo (the )?last (resume )?change\b", t):
