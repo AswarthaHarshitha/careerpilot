@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl fontconfig \
+ && apt-get install -y --no-install-recommends ca-certificates curl fontconfig tesseract-ocr tesseract-ocr-eng \
  && rm -rf /var/lib/apt/lists/*
 
 ARG TECTONIC_VERSION=0.17.0
