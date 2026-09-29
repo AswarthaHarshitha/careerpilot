@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  BarChart3, Briefcase, FileText, FolderGit2, LayoutDashboard, LogOut, Moon, Plus, Send, Settings, Sun, User2,
+  BarChart3, Briefcase, FileText, FolderGit2, LayoutDashboard, LogOut, Moon, Plus, Search, Send, Settings, Sun, User2,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import type { JobSummary } from '../lib/types'
 import { Button, Dialog, ErrorState, Input, Kbd, cx } from './ui'
 import { SidebarAgentStatus } from './AgentStatus'
+import { CommandPalette } from './CommandPalette'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -79,13 +80,14 @@ export function AppShell() {
   const { user, logout } = useAuth()
   const [dark, setDark] = useTheme()
   const [quick, setQuick] = useState(false)
+  const [palette, setPalette] = useState(false)
   const loc = useLocation()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        setQuick(true)
+        setPalette(true)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -100,8 +102,8 @@ export function AppShell() {
           <span className="font-serif text-[17px] font-semibold tracking-[-0.01em]">CareerPilot</span>
         </div>
         <div className="px-3 pb-3">
-          <button onClick={() => setQuick(true)} className="flex h-9 w-full items-center gap-2 rounded-md border border-line-strong bg-surface px-3 text-[13px] text-muted shadow-card transition-colors hover:text-ink">
-            <Plus className="size-3.5" /> Analyze a job <span className="ml-auto"><Kbd>⌘K</Kbd></span>
+          <button onClick={() => setPalette(true)} className="flex h-9 w-full items-center gap-2 rounded-md border border-line-strong bg-surface px-3 text-[13px] text-muted shadow-card transition-colors hover:text-ink">
+            <Search className="size-3.5" /> Command or job link <span className="ml-auto"><Kbd>⌘K</Kbd></span>
           </button>
         </div>
         <nav className="flex-1 space-y-0.5 px-3" aria-label="Main">
@@ -172,6 +174,7 @@ export function AppShell() {
         </nav>
       </div>
       <QuickImport open={quick} onClose={() => setQuick(false)} />
+      <CommandPalette open={palette} onClose={() => setPalette(false)} />
     </div>
   )
 }
