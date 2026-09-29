@@ -176,3 +176,23 @@ def test_assistant_refuses_to_add_unevidenced_skills(generated):
         json={"instruction": "Add Kubernetes to the skills", "base_revision": s["revision"]},
     ).json()
     assert not r["applied"] and r["refused"]
+
+
+def test_structural_requests_never_call_the_ai_provider(generated):
+    from app.llm import provider
+    from tests.conftest import FakeLLM
+
+    c, vid = generated
+    fake = FakeLLM([])
+    provider.set_test_provider(fake)
+    rev = c.get(f"/api/resumes/{vid}/editor").json()["revision"]
+    for instruction in ("Remove the portfolio link", "Make the resume exactly one page", "Remove the certifications"):
+        r = c.post(
+            f"/api/resumes/{vid}/assistant", json={"instruction": instruction, "base_revision": rev, "apply": True}
+        )
+        assert r.status_code == 200, r.text
+        if r.json().get("applied"):
+            rev = r.json()["state"]["revision"]
+    rev = c.post(f"/api/resumes/{vid}/undo", json={"base_revision": rev}).json()["revision"]
+    c.post(f"/api/resumes/{vid}/redo", json={"base_revision": rev})
+    assert fake.prompts == []  # deterministic operations: no AI request was made

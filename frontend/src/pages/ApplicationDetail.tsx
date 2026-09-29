@@ -94,7 +94,7 @@ function Header({ a }: { a: Application }) {
 const STATE_COPY: Record<string, { title: string; tone: 'neutral' | 'active' | 'attention' | 'done' | 'bad' }> = {
   queued: { title: 'Waiting for the apply agent', tone: 'attention' },
   running: { title: 'Opening the application', tone: 'active' },
-  action_required: { title: 'Action required in the browser', tone: 'attention' },
+  action_required: { title: 'Manual action required', tone: 'attention' },
   awaiting_answers: { title: 'Some questions need you', tone: 'attention' },
   filling: { title: 'Filling the form', tone: 'active' },
   awaiting_review: { title: 'Ready for your review', tone: 'attention' },
@@ -188,7 +188,7 @@ function AssistedApply({ a }: { a: Application }) {
           <CardHeader title="Review application" subtitle={`${fields.length} fields found · ${pending.length} need you`}
             actions={s && ['awaiting_review', 'awaiting_answers', 'filling'].includes(s.state) && (
               <Button variant="primary" disabled={!readyToSubmit} onClick={() => setConfirmOpen(true)} title={readyToSubmit ? '' : 'Answer every highlighted field first'}>
-                Submit application
+                Review application
               </Button>
             )} />
           <ul className="divide-y divide-line">
@@ -283,14 +283,24 @@ function ConfirmSubmit({ open, onClose, a, onDone }: { open: boolean; onClose: (
     mutationFn: () => post<Application>(`/api/applications/${a.id}/automation/confirm-submit`, { typed_confirmation: typed }),
     onSuccess: (d) => { onDone(d); onClose(); setTyped('') },
   })
-  const filled = (a.fields ?? []).filter((f) => f.value && f.input_type !== 'file')
+  const fields = a.fields ?? []
+  const filled = fields.filter((f) => f.value && f.input_type !== 'file')
+  const required = fields.filter((f) => f.required)
+  const unresolved = fields.filter((f) => (f.status === 'needs_input' && (f.required || f.field_key === 'consent')) || f.status === 'needs_confirmation')
   return (
-    <Dialog open={open} onClose={onClose} title="Submit this application?" width="max-w-xl"
+    <Dialog open={open} onClose={onClose} title="Application ready" width="max-w-xl"
       footer={<>
         <Button variant="ghost" onClick={onClose}>Not yet</Button>
-        <Button variant="primary" loading={m.isPending} disabled={needType && typed.trim().toLowerCase() !== a.company.trim().toLowerCase()} onClick={() => m.mutate()}>Submit application</Button>
+        <Button variant="primary" loading={m.isPending} disabled={unresolved.length > 0 || (needType && typed.trim().toLowerCase() !== a.company.trim().toLowerCase())} onClick={() => m.mutate()}>Confirm &amp; Submit</Button>
       </>}>
-      <p className="text-[13px] text-ink-2">The agent will click the employer's submit button for <span className="font-semibold text-ink">{a.role_title}</span> at <span className="font-semibold text-ink">{a.company}</span>. This cannot be undone.</p>
+      <dl className="mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
+        <dt className="text-muted">Company</dt><dd className="font-medium">{a.company || '—'}</dd>
+        <dt className="text-muted">Role</dt><dd className="font-medium">{a.role_title || '—'}</dd>
+        <dt className="text-muted">Resume</dt><dd>{a.resume_version ? `Resume v${a.resume_version.version_number}` : 'None attached'}</dd>
+        <dt className="text-muted">Required fields</dt><dd>{required.every((f) => f.value || f.status === 'confirmed') ? 'Complete' : `${required.filter((f) => !f.value).length} empty`}</dd>
+        <dt className="text-muted">Unresolved fields</dt><dd className={unresolved.length ? 'font-medium text-missing' : ''}>{unresolved.length}</dd>
+      </dl>
+      <p className="text-[13px] text-ink-2">Only after you confirm will the agent click the employer's submit button for <span className="font-semibold text-ink">{a.role_title}</span> at <span className="font-semibold text-ink">{a.company}</span>. This cannot be undone.</p>
       <div className="mt-3 max-h-[220px] overflow-y-auto rounded-md border border-line bg-surface-2/40 p-3 text-[12.5px]">
         {filled.map((f) => <div key={f.id} className="flex gap-2 py-0.5"><span className="w-2/5 shrink-0 truncate text-muted">{f.label}</span><span className="truncate">{f.field_key === 'consent' ? 'Accepted' : f.value}</span></div>)}
         {a.resume_version && <div className="flex gap-2 py-0.5"><span className="w-2/5 shrink-0 text-muted">Resume</span><span>Version {a.resume_version.version_number}</span></div>}

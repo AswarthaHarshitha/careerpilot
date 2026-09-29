@@ -8,7 +8,7 @@ dev-api:
 	cd backend && mkdir -p var && uv run alembic upgrade head && uv run uvicorn app.main:app --reload --port 8010
 
 dev-web:
-	cd frontend && API_URL=http://127.0.0.1:8010 npm run dev
+	cd frontend && VITE_API_URL=$${VITE_API_URL:-http://127.0.0.1:8010} npm run dev
 
 test: test-backend test-web
 

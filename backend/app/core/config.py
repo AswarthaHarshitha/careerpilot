@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 INSECURE_DEV_SECRET = "dev-only-insecure-secret-change-me-0000000000"  # noqa: S105
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./var/careerpilot.db"
 
     # Signs session tokens. Must be long and random in production.
-    jwt_secret: str = INSECURE_DEV_SECRET
+    jwt_secret: str = Field(default=INSECURE_DEV_SECRET, validation_alias=AliasChoices("SECRET_KEY", "JWT_SECRET"))
     session_ttl_hours: int = 24 * 14
     cookie_secure: bool = False
     # Fernet key (urlsafe base64, 32 bytes) used to encrypt API keys and tokens the user stores.
@@ -38,11 +38,18 @@ class Settings(BaseSettings):
     github_raw_base: str = "https://raw.githubusercontent.com"
     github_token: str = ""  # optional server-wide token; users can also store their own
 
-    # Language model. "none" keeps every feature working with deterministic logic only.
-    llm_provider: Literal["none", "gemini", "openai_compatible"] = "none"
-    llm_model: str = ""
-    llm_base_url: str = ""
-    llm_api_key: str = ""
+    # AI providers. Every AI-assisted step also has a deterministic path, so none of these is required.
+    # Keys live only on the server; the web app never sees them.
+    gemini_api_key: str = ""
+    gemini_model: str = ""  # empty: pick the current Flash model from the provider's model list
+    openrouter_api_key: str = ""
+    openrouter_model: str = ""  # empty: use OpenRouter's free-model router or a currently listed free model
+    ollama_base_url: str = ""  # e.g. http://localhost:11434 when Ollama runs next to the API
+    ollama_model: str = ""  # empty: the first model Ollama has installed
+    # Order in which configured providers are tried when a user has not chosen one.
+    ai_provider_order: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["gemini", "openrouter", "ollama"]
+    )
     llm_timeout_seconds: float = 60.0
 
     # Resume rendering.
@@ -55,7 +62,7 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = 1.0
     worker_threads: int = 2
 
-    @field_validator("cors_origins", "fetch_allow_private_hosts", mode="before")
+    @field_validator("cors_origins", "fetch_allow_private_hosts", "ai_provider_order", mode="before")
     @classmethod
     def _split_csv(cls, v):
         if isinstance(v, str):
@@ -76,7 +83,7 @@ class Settings(BaseSettings):
     def _production_guards(self):
         if self.app_env == "production":
             if self.jwt_secret == INSECURE_DEV_SECRET or len(self.jwt_secret) < 32:
-                raise ValueError("JWT_SECRET must be set to a random value of at least 32 characters in production")
+                raise ValueError("SECRET_KEY must be set to a random value of at least 32 characters in production")
             if not self.secret_encryption_key:
                 raise ValueError("SECRET_ENCRYPTION_KEY must be set in production")
             if self.fetch_allow_private_hosts:

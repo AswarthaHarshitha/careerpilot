@@ -16,8 +16,10 @@ os.environ.update(
     {
         "APP_ENV": "test",
         "WORKER_ENABLED": "false",
-        "JWT_SECRET": "test-secret-0123456789-0123456789-0123456789",
-        "LLM_PROVIDER": "none",
+        "SECRET_KEY": "test-secret-0123456789-0123456789-0123456789",
+        "GEMINI_API_KEY": "",
+        "OPENROUTER_API_KEY": "",
+        "OLLAMA_BASE_URL": "",
         "GITHUB_TOKEN": "",
         "ALLOW_REGISTRATION": "false",
         "COOKIE_SECURE": "false",

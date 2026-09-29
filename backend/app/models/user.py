@@ -67,10 +67,16 @@ class UserSettings(Base):
     deadline_reminder_days: Mapped[int] = mapped_column(Integer, default=3)
     follow_up_after_days: Mapped[int] = mapped_column(Integer, default=7)
 
-    llm_provider: Mapped[str] = mapped_column(String(32), default="server")  # server|none|gemini|openai_compatible
-    llm_model: Mapped[str] = mapped_column(String(120), default="")
-    llm_base_url: Mapped[str] = mapped_column(String(300), default="")
-    llm_api_key_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # AI provider: "auto" follows the server's provider order; "none" keeps every step deterministic.
+    ai_provider: Mapped[str] = mapped_column(String(20), default="auto")  # auto|gemini|openrouter|ollama|none
+    # When the chosen provider is rate-limited or unavailable, try the next configured one.
+    ai_fallback_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Privacy mode: resume and profile content is sent only to a local model, never to an external provider.
+    ai_privacy_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Optional personal keys; they take precedence over the server's keys. Stored encrypted.
+    gemini_key_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
+    openrouter_key_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
+    onboarded_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     github_username: Mapped[str] = mapped_column(String(100), default="")
     github_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)

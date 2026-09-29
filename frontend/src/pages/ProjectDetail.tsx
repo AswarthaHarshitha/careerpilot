@@ -8,7 +8,7 @@ import {
   errorText, useToast,
 } from '../components/ui'
 import { del, get, patch, post, put } from '../lib/api'
-import { relative } from '../lib/format'
+import { fmtDate, relative } from '../lib/format'
 import type { Evidence, Project } from '../lib/types'
 
 const KIND_ORDER = ['technology', 'concept', 'testing', 'feature', 'architecture', 'deployment']
@@ -102,6 +102,20 @@ export default function ProjectDetail() {
               )}
             </div>
           </Card>
+          {p.analysis && p.analysis.analyzer_version && (
+            <Card>
+              <CardHeader title="Repository analysis" subtitle={`Cached from the last scan${p.last_scanned_at ? ' · ' + fmtDate(p.last_scanned_at) : ''}. Re-read when the repository changes, after 30 days, or when you rescan.`} />
+              <dl className="grid gap-x-4 gap-y-2 px-4 py-3 text-[12.5px] sm:grid-cols-[140px_1fr]">
+                {p.analysis.readme_summary && <><dt className="text-muted">Summary</dt><dd>{p.analysis.readme_summary}{p.analysis.summary_by && <span className="text-faint"> · read by {p.analysis.summary_by}</span>}</dd></>}
+                <dt className="text-muted">Frameworks</dt><dd>{p.analysis.frameworks?.join(', ') || '—'}</dd>
+                <dt className="text-muted">Dependencies</dt><dd className="text-ink-2">{p.analysis.dependencies?.length ? `${p.analysis.dependencies.slice(0, 18).join(', ')}${p.analysis.dependencies.length > 18 ? ` +${p.analysis.dependencies.length - 18}` : ''}` : '—'}</dd>
+                <dt className="text-muted">Tests</dt><dd>{p.analysis.tests_detected ? `Yes · ${p.analysis.tests}` : 'None found'}</dd>
+                <dt className="text-muted">Deployment</dt><dd>{p.analysis.deployment_detected ? p.analysis.deployment?.join(', ') : 'None found'}</dd>
+                {!!p.analysis.features_detected?.length && <><dt className="text-muted">Features</dt><dd><ul className="space-y-0.5">{p.analysis.features_detected.slice(0, 6).map((f) => <li key={f}>• {f}</li>)}</ul></dd></>}
+                <dt className="text-muted">Confidence</dt><dd className="capitalize">{p.analysis.confidence} · {p.analysis.evidence_items} evidence items</dd>
+              </dl>
+            </Card>
+          )}
           {p.readme_excerpt && (
             <Card>
               <details>

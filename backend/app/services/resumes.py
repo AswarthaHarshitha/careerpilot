@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.errors import AppError, NotFound
 from app.llm.provider import get_provider
+from app.llm.router import describe
 from app.matching.taxonomy import display_name
 from app.models import (
     Achievement,
@@ -868,6 +869,8 @@ def generate_task(ctx: TaskContext) -> dict:
             ctx.note("Applying your instructions", f"{len(cfg['conflicts'])} not applied (conflict with evidence)")
     with ctx.step("Tailoring content"):
         content, changes = tailor(inputs, provider)
+        if describe(provider):
+            ctx.note("Tailoring content", describe(provider))
         seed_header(content, _structure(tpl).get("header", {}), cfg, profile)
         dropped = drop_profile_assets(content)
         for name in dropped:

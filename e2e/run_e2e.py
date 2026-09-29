@@ -74,13 +74,16 @@ def main() -> None:
             **os.environ,
             "APP_ENV": "development",
             "DATABASE_URL": f"sqlite:///{tmp}/e2e.db",
-            "JWT_SECRET": secrets.token_urlsafe(40),
+            "SECRET_KEY": secrets.token_urlsafe(40),
             "WORKER_ENABLED": "true",
             "FETCH_ALLOW_PRIVATE_HOSTS": "127.0.0.1",
             "GITHUB_API_BASE": f"{site.base}/github-api",
             "GITHUB_RAW_BASE": f"{site.base}/github-raw",
             "GITHUB_TOKEN": "",
-            "LLM_PROVIDER": "none",
+            # deterministic run: no AI provider, even if backend/.env configures one
+            "GEMINI_API_KEY": "",
+            "OPENROUTER_API_KEY": "",
+            "OLLAMA_BASE_URL": "",
             "ALLOW_REGISTRATION": "false",
         }
         print("CareerPilot end-to-end test")

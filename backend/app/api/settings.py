@@ -10,17 +10,48 @@ from app.api.deps import current_user
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import AppError, NotFound
-from app.core.fetch import validate_url
 from app.core.security import decrypt_secret, encrypt_secret, mask_secret, new_runner_token
 from app.github.client import GitHubClient, parse_username
-from app.llm.provider import LLMError, get_provider, resolve_config
-from app.models import ApiToken, User, UserSettings
+from app.llm import router as ai
+from app.llm.provider import LLMError
+from app.llm.providers import openrouter_key_status
+from app.models import AIUsage, ApiToken, User, UserSettings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
+def ai_out(s: UserSettings) -> dict:
+    available = ai.configured(s)
+    chain, note = ai.plan(s)
+    personal = {"gemini": s.gemini_key_encrypted, "openrouter": s.openrouter_key_encrypted}
+    cfg = get_settings()
+    models = {"gemini": cfg.gemini_model, "openrouter": cfg.openrouter_model, "ollama": cfg.ollama_model}
+    providers = []
+    for p in ai.PROVIDERS:
+        c = available.get(p)
+        providers.append(
+            {
+                "id": p,
+                "label": ai.LABELS[p],
+                "configured": c is not None,
+                "source": c.source if c else "",
+                "external": p != "ollama",
+                "your_key": mask_secret(decrypt_secret(personal.get(p))) if p in personal else "",
+                "model": models[p] or "automatic",
+                "base_url": cfg.ollama_base_url if p == "ollama" else "",
+            }
+        )
+    return {
+        "provider": s.ai_provider,
+        "fallback_enabled": s.ai_fallback_enabled,
+        "privacy_mode": s.ai_privacy_mode,
+        "active_order": [ai.LABELS[c.provider] for c in chain],
+        "note": note,
+        "providers": providers,
+    }
+
+
 def settings_out(s: UserSettings) -> dict:
-    server = resolve_config(None)
     return {
         "default_template_id": s.default_template_id,
         "resume_max_pages": s.resume_max_pages,
@@ -34,14 +65,8 @@ def settings_out(s: UserSettings) -> dict:
         "header_portfolio": s.header_portfolio,
         "header_github": s.header_github,
         "header_linkedin": s.header_linkedin,
-        "ai": {
-            "provider": s.llm_provider,
-            "model": s.llm_model,
-            "base_url": s.llm_base_url,
-            "api_key": mask_secret(decrypt_secret(s.llm_api_key_encrypted)),
-            "server_provider": server.provider if server else "none",
-            "server_model": server.model if server else "",
-        },
+        "ai": ai_out(s),
+        "onboarded": s.onboarded_at is not None,
         "github": {
             "username": s.github_username,
             "token": mask_secret(decrypt_secret(s.github_token_encrypted)),
@@ -82,37 +107,105 @@ def update_prefs(body: PrefsIn, user: User = Depends(current_user), db: Session 
 
 
 class AIIn(BaseModel):
-    provider: Literal["server", "none", "gemini", "openai_compatible"]
-    model: str = Field(default="", max_length=120)
-    base_url: str = Field(default="", max_length=300)
-    api_key: str | None = Field(default=None, max_length=500)  # None keeps the stored key; "" clears it
+    provider: Literal["auto", "gemini", "openrouter", "ollama", "none"]
+    fallback_enabled: bool = True
+    privacy_mode: bool = False
+    # None keeps the stored key; "" removes it. Keys are write-only: responses only ever show a masked form.
+    gemini_key: str | None = Field(default=None, max_length=500)
+    openrouter_key: str | None = Field(default=None, max_length=500)
 
 
 @router.put("/ai")
 def update_ai(body: AIIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     s = db.get(UserSettings, user.id)
-    if body.base_url:
-        validate_url(body.base_url)
-    s.llm_provider, s.llm_model, s.llm_base_url = body.provider, body.model.strip(), body.base_url.strip()
-    if body.api_key is not None:
-        s.llm_api_key_encrypted = encrypt_secret(body.api_key.strip()) if body.api_key.strip() else None
+    s.ai_provider, s.ai_fallback_enabled, s.ai_privacy_mode = body.provider, body.fallback_enabled, body.privacy_mode
+    if body.gemini_key is not None:
+        s.gemini_key_encrypted = encrypt_secret(body.gemini_key.strip()) if body.gemini_key.strip() else None
+    if body.openrouter_key is not None:
+        s.openrouter_key_encrypted = (
+            encrypt_secret(body.openrouter_key.strip()) if body.openrouter_key.strip() else None
+        )
     db.commit()
     return settings_out(s)
 
 
+class AITestIn(BaseModel):
+    provider: Literal["gemini", "openrouter", "ollama"]
+
+
 @router.post("/ai/test")
-def test_ai(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    provider = get_provider(db.get(UserSettings, user.id))
+def test_ai(body: AITestIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    s = db.get(UserSettings, user.id)
+    provider = ai.single(s, body.provider)
+    label = ai.LABELS[body.provider]
     if provider is None:
-        raise AppError(
-            "No AI provider is configured. CareerPilot works without one, using deterministic analysis.",
-            code="no_provider",
-        )
+        hint = {
+            "gemini": "Add a Gemini API key here or set GEMINI_API_KEY on the server.",
+            "openrouter": "Add an OpenRouter API key here or set OPENROUTER_API_KEY on the server.",
+            "ollama": "Install Ollama next to the API and set OLLAMA_BASE_URL (for example http://localhost:11434).",
+        }[body.provider]
+        raise AppError(f"{label} is not configured.", code="not_configured", hint=hint)
+    started = datetime.now(UTC)
     try:
-        data = provider.complete_json('Reply with JSON {"ok": true}.', "Connection test.", max_tokens=20)
+        data = provider.complete_json('Reply with JSON {"ok": true}.', "Connection test.", max_tokens=200)
     except LLMError as exc:
-        raise AppError(str(exc), code="provider_error") from exc
-    return {"ok": bool(data.get("ok")), "provider": provider.name}
+        raise AppError(f"{label}: {exc}", code="provider_error") from exc
+    ms = int((datetime.now(UTC) - started).total_seconds() * 1000)
+    return {"ok": bool(data.get("ok")), "provider": label, "latency_ms": ms}
+
+
+@router.get("/ai/usage")
+def ai_usage(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Application-side request counts (what CareerPilot sent), plus figures a provider reports itself."""
+    s = db.get(UserSettings, user.id)
+    now = datetime.now(UTC)
+    today, month = now.strftime("%Y-%m-%d"), now.strftime("%Y-%m")
+    rows = db.scalars(select(AIUsage).where(AIUsage.user_id == user.id, AIUsage.day.like(month + "%"))).all()
+    chain, note = ai.plan(s)
+    available = ai.configured(s)
+    out = []
+    for p in ai.PROVIDERS:
+        mine = [r for r in rows if r.provider == p]
+        last_err = max((r for r in mine if r.last_error_at), key=lambda r: r.last_error_at, default=None)
+        c = available.get(p)
+        cooling = max(0, int(ai.cooling_until(c) - now.timestamp())) if c else 0
+        entry = {
+            "id": p,
+            "label": ai.LABELS[p],
+            "configured": c is not None,
+            "requests_today": sum(r.requests for r in mine if r.day == today),
+            "requests_month": sum(r.requests for r in mine),
+            "rate_limited_month": sum(r.rate_limited for r in mine),
+            "failed_month": sum(r.failed for r in mine),
+            "last_error": last_err.last_error if last_err else "",
+            "last_error_at": last_err.last_error_at.isoformat() if last_err else None,
+            "cooling_down_seconds": cooling,
+            "reported": None,
+        }
+        if p == "openrouter" and c is not None:
+            entry["reported"] = openrouter_key_status(c.cfg.api_key)
+        out.append(entry)
+    return {
+        "current_provider": ai.LABELS[chain[0].provider] if chain else "None (deterministic processing)",
+        "fallback": (
+            "Off"
+            if not s.ai_fallback_enabled
+            else " → ".join(ai.LABELS[c.provider] for c in chain)
+            if len(chain) > 1
+            else "On, but no other permitted provider is configured"
+        ),
+        "privacy_mode": s.ai_privacy_mode,
+        "note": note,
+        "providers": out,
+    }
+
+
+@router.post("/onboarding/complete")
+def complete_onboarding(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    s = db.get(UserSettings, user.id)
+    s.onboarded_at = s.onboarded_at or datetime.now(UTC)
+    db.commit()
+    return settings_out(s)
 
 
 class GitHubIn(BaseModel):

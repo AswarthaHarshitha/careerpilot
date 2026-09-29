@@ -2,11 +2,10 @@
 
 import hashlib
 import io
+import logging
 import re
 from datetime import UTC, date, datetime, timedelta
 
-from pypdf import PdfReader
-from pypdf.errors import PdfReadError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +15,7 @@ from app.jobs.llm_extract import enhance_with_llm
 from app.jobs.parse import analyze_text
 from app.jobs.platforms import RawPosting, detect_platform, fetch_posting
 from app.llm.provider import get_provider
+from app.llm.router import describe
 from app.matching.engine import RequirementInput, match_requirements, score_projects
 from app.models import (
     Application,
@@ -29,6 +29,8 @@ from app.models import (
 )
 from app.services.snapshot import load_snapshot
 from app.tasks.queue import TaskContext, enqueue, task_handler
+
+log = logging.getLogger(__name__)
 
 ANALYSIS_STEPS_URL = [
     "Reading the job page",
@@ -116,18 +118,62 @@ def create_job_from_text(
 
 
 def text_from_pdf(data: bytes) -> str:
+    """Local extraction: the PDF's text layer first, OCR (Tesseract, when installed) only for pages without one."""
+    import shutil
+
+    import pymupdf
+
     if not data.startswith(b"%PDF"):
         raise AppError("That file is not a PDF.", code="invalid_file")
     try:
-        reader = PdfReader(io.BytesIO(data))
-        if len(reader.pages) > 20:
-            raise AppError("The PDF has too many pages for a job description.", code="invalid_file")
-        text = "\n".join((p.extract_text() or "") for p in reader.pages)
-    except PdfReadError as exc:
+        doc = pymupdf.open(stream=data, filetype="pdf")
+    except Exception as exc:  # noqa: BLE001 - any parser failure means an unreadable upload
         raise AppError("The PDF could not be read.", code="invalid_file") from exc
+    if doc.page_count > 20:
+        raise AppError("The PDF has too many pages for a job description.", code="invalid_file")
+    pages = []
+    ocr = bool(shutil.which("tesseract"))
+    for page in doc:
+        text = page.get_text()
+        if len(text.strip()) < 40 and ocr:
+            try:
+                text = page.get_text(textpage=page.get_textpage_ocr(dpi=200, full=True))
+            except Exception:  # noqa: BLE001 - OCR is best effort
+                log.info("OCR failed on page %s", page.number)
+        pages.append(text)
+    text = "\n".join(pages)
     if len(text.strip()) < 120:
-        raise AppError("No readable text was found in the PDF (it may be a scanned image).", code="invalid_file")
+        hint = "" if ocr else " OCR is not installed on this server; paste the text instead."
+        raise AppError("No readable text was found in the PDF (it may be a scanned image)." + hint, code="invalid_file")
     return text
+
+
+def text_from_upload(filename: str, data: bytes) -> tuple[str, str]:
+    """Job description text from a PDF, Word document or text file, extracted locally. Returns (text, method)."""
+    name = (filename or "").lower()
+    if data.startswith(b"%PDF") or name.endswith(".pdf"):
+        return text_from_pdf(data), "pdf"
+    if name.endswith(".docx"):
+        from docx import Document
+
+        try:
+            d = Document(io.BytesIO(data))
+        except Exception as exc:  # noqa: BLE001
+            raise AppError("The Word document could not be read.", code="invalid_file") from exc
+        parts = [p.text for p in d.paragraphs]
+        for table in d.tables:
+            for row in table.rows:
+                parts.append(" | ".join(c.text for c in row.cells))
+        text = "\n".join(parts)
+        method = "docx"
+    elif name.endswith((".txt", ".md")):
+        text = data.decode("utf-8", errors="replace")
+        method = "text"
+    else:
+        raise AppError("Upload a PDF, Word (.docx) or text file.", code="invalid_file")
+    if len(text.strip()) < 120:
+        raise AppError("The file has too little text to be a job description.", code="invalid_file")
+    return text, method
 
 
 @task_handler("job_analyze")
@@ -183,7 +229,9 @@ def _analyze(ctx: TaskContext, job: Job) -> dict:
         provider = get_provider(settings)
         if provider is not None:
             notes += enhance_with_llm(provider, text, analysis, meta)
-            job.analyzed_with_llm = True
+            job.analyzed_with_llm = bool(provider.used)
+            if describe(provider):
+                ctx.note("Extracting requirements", describe(provider))
         job.company = job.company or meta.get("company", "") or _guess_company(text)
         job.role_title = job.role_title or meta.get("role_title", "") or _guess_role(text)
         job.location = job.location or analysis.location or meta.get("location", "")

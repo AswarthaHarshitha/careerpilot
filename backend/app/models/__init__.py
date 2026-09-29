@@ -1,3 +1,4 @@
+from app.models.ai import AIResponseCache, AIUsage
 from app.models.application import (
     ACTIVE_STATUSES,
     APPLICATION_STATUSES,
@@ -49,6 +50,8 @@ __all__ = [
     "EVIDENCE_READY_STATUSES",
     "PROJECT_STATUSES",
     "EVIDENCE_STATUSES",
+    "AIResponseCache",
+    "AIUsage",
     "Achievement",
     "ApiToken",
     "Application",

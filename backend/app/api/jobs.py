@@ -161,9 +161,9 @@ async def import_pdf(
     import json as _json
 
     data = await read_upload(file, 5_000_000)
-    text = svc.text_from_pdf(data)
+    text, method = svc.text_from_upload(file.filename or "", data)
     job, task_id = svc.create_job_from_text(
-        db, user.id, text, company=company, role=role_title, application_url=application_url.strip(), method="pdf"
+        db, user.id, text, company=company, role=role_title, application_url=application_url.strip(), method=method
     )
     if instructions:
         try:

@@ -143,3 +143,30 @@ def test_standard_layout_from_profile(auth_client):
     tpl = c.get(f"/api/templates/{r.json()['template']['id']}").json()
     assert not tpl["render_error"] and tpl["page_count"] == 1
     assert [s["kind"] for s in tpl["sections"]][:3] == ["summary", "experience", "skills"]
+
+
+def test_job_description_from_word_and_text_files(auth_client):
+    import io
+
+    from docx import Document
+
+    from tests.conftest import SAMPLE_JD, run_tasks
+
+    d = Document()
+    for line in SAMPLE_JD.splitlines():
+        d.add_paragraph(line)
+    buf = io.BytesIO()
+    d.save(buf)
+    r = auth_client.post(
+        "/api/jobs/pdf",
+        files={"file": ("backend-role.docx", buf.getvalue(), "application/octet-stream")},
+        data={"company": "Acme"},
+    )
+    assert r.status_code == 200, r.text
+    run_tasks()
+    job = auth_client.get(f"/api/jobs/{r.json()['job']['id']}").json()
+    assert {"python", "fastapi"} <= {q["canonical"] for q in job["requirements"]}
+    r = auth_client.post("/api/jobs/pdf", files={"file": ("jd.txt", SAMPLE_JD.encode(), "text/plain")})
+    assert r.status_code == 200, r.text
+    r = auth_client.post("/api/jobs/pdf", files={"file": ("jd.exe", b"MZ" + b"x" * 300, "application/octet-stream")})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_file"

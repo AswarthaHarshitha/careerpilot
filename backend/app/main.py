@@ -15,7 +15,7 @@ from app.api import settings as settings_api
 from app.core.config import get_settings
 from app.core.db import get_engine
 from app.core.errors import AppError
-from app.llm.provider import resolve_config
+from app.llm.router import configured
 from app.resume.latex_compile import resolve_engine
 
 # Importing registers the background task handlers.
@@ -151,12 +151,12 @@ def create_app() -> FastAPI:
                 conn.execute(text("SELECT 1"))
         except Exception:  # noqa: BLE001
             db_ok = False
-        cfg = resolve_config(None)
+        ai_ready = [p for p in configured(None)]
         body = {
             "status": "ok" if db_ok else "degraded",
             "database": "ok" if db_ok else "unavailable",
             "latex_engine": resolve_engine() or "missing",
-            "llm": cfg.provider if cfg else "none",
+            "ai_providers": ai_ready,
             "version": app.version,
         }
         return JSONResponse(status_code=200 if db_ok else 503, content=body)

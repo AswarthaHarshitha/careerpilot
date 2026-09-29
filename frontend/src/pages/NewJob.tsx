@@ -95,8 +95,8 @@ export default function NewJob() {
           )}
           {mode === 'pdf' && (
             <>
-              <Field label="Job description PDF" hint="Text-based PDFs only; scanned images cannot be read.">
-                <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              <Field label="Job description file" hint="PDF, Word (.docx) or text. Read on the server without any external service; scanned PDFs use OCR when it is installed.">
+                <input type="file" accept=".pdf,.docx,.txt,.md,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                   className="block w-full text-[13px] file:mr-3 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-3 file:py-1.5 file:text-[13px] file:text-ink hover:file:bg-surface-2" />
               </Field>
               <div className="grid gap-4 sm:grid-cols-3">

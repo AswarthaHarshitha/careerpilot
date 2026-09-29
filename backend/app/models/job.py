@@ -29,7 +29,7 @@ class Job(Base):
     deadline_source: Mapped[str] = mapped_column(String(300), default="")
     posted_date: Mapped[date | None] = mapped_column(Date)
     source_platform: Mapped[str] = mapped_column(String(40), default="")
-    ingest_method: Mapped[str] = mapped_column(String(20), default="url")  # url | paste | pdf
+    ingest_method: Mapped[str] = mapped_column(String(20), default="url")  # url | paste | pdf | docx | text
     description_text: Mapped[str] = mapped_column(Text, default="")
     responsibilities: Mapped[list] = mapped_column(JSON, default=list)
     qualifications: Mapped[list] = mapped_column(JSON, default=list)

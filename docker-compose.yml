@@ -20,9 +20,9 @@ services:
     environment:
       APP_ENV: development
       DATABASE_URL: postgresql://careerpilot:careerpilot@db:5432/careerpilot
-      JWT_SECRET: local-development-secret-change-me-0123456789
-      LLM_PROVIDER: ${LLM_PROVIDER:-none}
-      LLM_API_KEY: ${LLM_API_KEY:-}
+      SECRET_KEY: local-development-secret-change-me-0123456789
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports: ["8010:8000"]
 volumes:
   pgdata:

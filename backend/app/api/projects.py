@@ -94,6 +94,7 @@ def project_out(p: Project, full: bool = False) -> dict:
                 ],
                 "readme_excerpt": p.readme_excerpt[:1500],
                 "file_count": p.file_count,
+                "analysis": p.analysis or {},
             }
         )
     return out

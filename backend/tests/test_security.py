@@ -235,16 +235,15 @@ def test_prompt_injection_in_job_description_cannot_add_skills_or_deadlines(auth
 
 def test_api_keys_are_write_only_and_encrypted(auth_client):
     key = "AIzaSyTESTKEY-1234567890abcdefghijklmnop"
-    s = auth_client.put(
-        "/api/settings/ai", json={"provider": "gemini", "model": "gemini-2.5-flash", "api_key": key}
-    ).json()
-    assert key not in str(s) and s["ai"]["api_key"].endswith("mnop")
+    s = auth_client.put("/api/settings/ai", json={"provider": "gemini", "gemini_key": key}).json()
+    gemini = next(p for p in s["ai"]["providers"] if p["id"] == "gemini")
+    assert key not in str(s) and gemini["your_key"].endswith("mnop") and gemini["source"] == "your key"
     from app.core.db import session_factory
     from app.models import UserSettings
 
     db = session_factory()()
     row = db.scalars(__import__("sqlalchemy").select(UserSettings)).first()
-    assert key.encode() not in row.llm_api_key_encrypted
+    assert key.encode() not in row.gemini_key_encrypted
     db.close()
     export = auth_client.get("/api/data/export").text
     assert key not in export and "password_hash" not in export

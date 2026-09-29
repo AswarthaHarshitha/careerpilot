@@ -32,9 +32,9 @@ describe('final submission', () => {
       { match: /\/api\/settings$/, body: { submit_confirmation_mode: 'type_company' } },
     ])
     renderWithProviders(<Routes><Route path="/applications/:id" element={<ApplicationDetail />} /></Routes>, '/applications/7')
-    await userEvent.click(await screen.findByRole('button', { name: 'Submit application' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Review application' }))
     const dialog = await screen.findByRole('dialog')
-    const confirm = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Submit application')!
+    const confirm = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Confirm & Submit')!
     expect(confirm).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Type IBM to confirm'), 'IB')
     expect(confirm).toBeDisabled()
@@ -52,7 +52,7 @@ describe('final submission', () => {
     ])
     renderWithProviders(<Routes><Route path="/applications/:id" element={<ApplicationDetail />} /></Routes>, '/applications/7')
     expect(await screen.findByText('Why IBM?')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Submit application' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Review application' })).toBeDisabled()
     expect(screen.getByText('Needs your input')).toBeInTheDocument()
   })
 

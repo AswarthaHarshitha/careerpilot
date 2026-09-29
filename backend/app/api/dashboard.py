@@ -333,7 +333,8 @@ def export_data(user: User = Depends(current_user), db: Session = Depends(get_db
     out = {"exported_at": datetime.now(UTC).isoformat(), "account": {"email": user.email}}
     skip_cols = {
         "password_hash",
-        "llm_api_key_encrypted",
+        "gemini_key_encrypted",
+        "openrouter_key_encrypted",
         "github_token_encrypted",
         "token_hash",
         "pdf",

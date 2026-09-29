@@ -304,6 +304,7 @@ def editor_assistant(vid: int, body: AssistantIn, user: User = Depends(current_u
     """Plans a change from a natural-language request. Small, clear changes are applied at once; broad ones come
     back as a preview and are applied only when the user confirms (apply=true with the previewed ops)."""
     from app.llm.provider import get_provider
+    from app.llm.router import describe
     from app.models import UserSettings
     from app.resume import assistant
     from app.services import editor
@@ -317,10 +318,10 @@ def editor_assistant(vid: int, body: AssistantIn, user: User = Depends(current_u
         return {"applied": True, "state": editor.payload(db, v), "changed": changed}
     job = db.get(Job, v.job_id) if v.job_id else None
     focus = list(dict.fromkeys(r.label for r in job.requirements if r.kind == "skill")) if job else []
-    plan = assistant.plan(
-        v.content, body.instruction, body.selection, get_provider(db.get(UserSettings, user.id)), focus
-    )
+    provider = get_provider(db.get(UserSettings, user.id))
+    plan = assistant.plan(v.content, body.instruction, body.selection, provider, focus)
     result = {
+        "ai": describe(provider) if provider is not None and (provider.used or provider.notices) else "",
         "summary": plan.summary,
         "message": plan.message,
         "refused": plan.refused,

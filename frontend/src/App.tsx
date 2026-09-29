@@ -1,8 +1,11 @@
+import { useQuery } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { Spinner } from './components/ui'
+import { get } from './lib/api'
 import { useAuth } from './lib/auth'
+import type { SettingsData } from './lib/types'
 import Login from './pages/Login'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -21,6 +24,7 @@ const Profile = lazy(() => import('./pages/Profile'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const SettingsPage = lazy(() => import('./pages/Settings'))
 const NotFound = lazy(() => import('./pages/NotFound'))
+const Setup = lazy(() => import('./pages/Setup'))
 
 const fallback = (
   <div className="flex h-full items-center justify-center"><Spinner /></div>
@@ -56,5 +60,12 @@ export default function App() {
   const { user, loading } = useAuth()
   if (loading) return fallback
   if (!user) return <Login />
+  return <Workspace />
+}
+
+function Workspace() {
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => get<SettingsData>('/api/settings') })
+  if (settings.isLoading) return fallback
+  if (settings.data && !settings.data.onboarded) return wrap(<Setup settings={settings.data} />)
   return <RouterProvider router={router} />
 }

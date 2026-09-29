@@ -417,3 +417,37 @@ def dedupe(items: list[EvidenceItem]) -> list[EvidenceItem]:
 
 def known_skill(key: str) -> bool:
     return key in SKILLS
+
+
+ANALYZER_VERSION = 3  # bump when the analysis changes so cached repositories are re-read once
+DEPLOY_KEYS = {"vercel", "render_host", "heroku", "serverless", "aws", "kubernetes", "docker", "netlify"}
+
+
+def repo_summary(analysis: RepoAnalysis, manifests: dict[str, str]) -> dict:
+    """The cached, structured view of one repository (what the evidence cache stores alongside evidence rows)."""
+    ev = analysis.evidence
+    verified = [e for e in ev if e.status == "verified" and e.canonical]
+    frameworks = sorted(
+        {e.label for e in verified if e.category in ("frontend", "backend", "ml", "data", "mobile", "database")}
+    )
+    deps: list[str] = []
+    for path, content in manifests.items():
+        deps += parse_dependencies(path, content)
+    deploy_urls = [e.label for e in ev if e.kind == "deployment"]
+    deploy_config = sorted({e.label for e in verified if e.canonical in DEPLOY_KEYS and e.source_type == "file_tree"})
+    tests = next((e for e in ev if e.kind == "testing" and e.canonical == "testing"), None)
+    strong = {e.source_type for e in verified} & {"dependency", "language", "file_tree"}
+    confidence = "high" if len(strong) >= 2 and analysis.readme_excerpt else "medium" if strong else "low"
+    return {
+        "analyzer_version": ANALYZER_VERSION,
+        "languages": sorted(analysis.languages, key=lambda k: -analysis.languages[k]),
+        "frameworks": frameworks,
+        "dependencies": sorted(set(deps))[:60],
+        "features_detected": [e.label for e in ev if e.kind == "feature"][:12],
+        "deployment_detected": bool(deploy_urls or deploy_config),
+        "deployment": deploy_urls[:3] + deploy_config,
+        "tests_detected": tests is not None,
+        "tests": tests.source_detail if tests else "",
+        "evidence_items": len(ev),
+        "confidence": confidence,
+    }

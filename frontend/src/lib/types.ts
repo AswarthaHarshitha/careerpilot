@@ -239,6 +239,11 @@ export type Project = {
   languages?: { name: string; share: number }[]
   readme_excerpt?: string
   file_count?: number | null
+  analysis?: {
+    analyzer_version?: number; languages?: string[]; frameworks?: string[]; dependencies?: string[]; features_detected?: string[]
+    deployment_detected?: boolean; deployment?: string[]; tests_detected?: boolean; tests?: string; evidence_items?: number
+    confidence?: 'high' | 'medium' | 'low'; readme_summary?: string; summary_by?: string; scanned_commit_date?: string | null
+  }
 }
 
 export type Suggestion = {
@@ -435,4 +440,31 @@ export type EditorContent = {
   header: { name: string; links: { id: string; kind: string; url: string; mode: string; in_template?: boolean }[] }
   sections: EditorSection[]
   page_target?: number
+}
+
+export type AIProviderInfo = {
+  id: 'gemini' | 'openrouter' | 'ollama'; label: string; configured: boolean; source: '' | 'server' | 'your key'
+  external: boolean; your_key: string; model: string; base_url: string
+}
+export type AISettings = {
+  provider: 'auto' | 'gemini' | 'openrouter' | 'ollama' | 'none'; fallback_enabled: boolean; privacy_mode: boolean
+  active_order: string[]; note: string; providers: AIProviderInfo[]
+}
+export type AIUsage = {
+  current_provider: string; fallback: string; privacy_mode: boolean; note: string
+  providers: {
+    id: string; label: string; configured: boolean; requests_today: number; requests_month: number
+    rate_limited_month: number; failed_month: number; last_error: string; last_error_at: string | null
+    cooling_down_seconds: number
+    reported: null | { free_requests_today: number | null; free_requests_daily_limit: number | null; free_requests_remaining: number | null }
+  }[]
+}
+export type SettingsData = {
+  default_template_id: number | null; resume_max_pages: number; max_projects: number; max_bullets_per_project: number
+  timezone: string; submit_confirmation_mode: 'type_company' | 'click'; deadline_reminder_days: number
+  follow_up_after_days: number; notify_in_app: boolean
+  header_portfolio: 'template' | 'include' | 'exclude'; header_github: 'template' | 'include' | 'exclude'; header_linkedin: 'template' | 'include' | 'exclude'
+  ai: AISettings
+  onboarded: boolean
+  github: { username: string; token: string; include_private_repos: boolean; include_forks: boolean; last_scan_at: string | null; server_token: boolean }
 }

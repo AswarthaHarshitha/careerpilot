@@ -570,7 +570,7 @@ function LivePdf({ vid, revision, pages, saving }: { vid: number; revision: numb
 // --- assistant -----------------------------------------------------------------------------------
 
 type AssistantResult = {
-  applied: boolean; summary: string[]; message: string; refused: string[]; ops: Op[]; broad: boolean
+  applied: boolean; summary: string[]; message: string; refused: string[]; ops: Op[]; broad: boolean; ai?: string
   preview?: { id: string; before: string; after: string }[]; state?: EditorState; changed?: string[]
 }
 
@@ -648,6 +648,7 @@ function AssistantPanel({ vid, state, selection, clearSelection, flush, onApplie
               <p className="text-ink-2">{result.message}</p>
             )}
             {result.refused.map((r) => <p key={r} className="mt-1 flex gap-1.5 text-verify"><Info className="mt-0.5 size-3.5 shrink-0" />{r}</p>)}
+            {result.ai && <p className="mt-1.5 text-[11.5px] text-faint">{result.ai}</p>}
           </motion.div>
         )}
       </AnimatePresence>

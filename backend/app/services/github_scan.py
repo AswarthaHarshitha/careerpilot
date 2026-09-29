@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decrypt_secret
 from app.github.client import GitHubClient, RateLimited, RepoInfo
-from app.github.evidence import analyze_repository, select_manifests, select_readme
+from app.github.evidence import ANALYZER_VERSION, analyze_repository, repo_summary, select_manifests, select_readme
 from app.llm.provider import LLMError, get_provider, wrap_untrusted
 from app.matching.taxonomy import canonicalize, category_of, display_name
 from app.models import Project, ProjectEvidence, SuggestedProject, UserProfile, UserSettings
@@ -17,6 +17,8 @@ from app.services.assets import apply_classification
 from app.tasks.queue import RetryLater, TaskContext, task_handler
 
 log = logging.getLogger(__name__)
+
+CACHE_DAYS = 30  # re-read an unchanged repository at most this often
 
 
 def slugify(name: str) -> str:
@@ -63,9 +65,11 @@ def upsert_repository(
     project.primary_language = repo.language
     project.topics = repo.topics
     project.stars = repo.stars
+    fresh = project.last_scanned_at is not None and (datetime.now(UTC) - project.last_scanned_at).days < CACHE_DAYS
     unchanged = (
-        project.last_scanned_at is not None
+        fresh
         and project.pushed_at == repo.pushed_at
+        and (project.analysis or {}).get("analyzer_version") == ANALYZER_VERSION
         and not project.scan_error
         and not force
     )
@@ -106,6 +110,11 @@ def upsert_repository(
     project.languages = analysis.languages
     project.readme_excerpt = analysis.readme_excerpt
     project.file_count = analysis.file_count
+    project.analysis = {
+        **repo_summary(analysis, manifests),
+        "readme_summary": "",
+        "scanned_commit_date": (repo.pushed_at.isoformat() if repo.pushed_at else None),
+    }
     project.scan_error = "Repository tree was truncated by GitHub; some files were not inspected." if truncated else ""
     db.flush()
 
@@ -175,6 +184,9 @@ def enrich_with_llm(db: Session, project: Project, settings: UserSettings) -> No
     except LLMError as exc:
         log.info("LLM enrichment skipped for project %s: %s", project.id, exc)
         return
+    summary = str(data.get("summary", "")).strip()[:400]
+    if summary:
+        project.analysis = {**(project.analysis or {}), "readme_summary": summary, "summary_by": provider.used}
     existing = {e.canonical for e in project.evidence if e.canonical}
     added = 0
     for s in (data.get("skills") or [])[:12]:
@@ -194,7 +206,7 @@ def enrich_with_llm(db: Session, project: Project, settings: UserSettings) -> No
                 category=category_of(key),
                 status="inferred",
                 source_type="llm",
-                source_detail=f"model reading of README ({provider.name})",
+                source_detail=f"model reading of README ({provider.used or provider.name})",
                 snippet=str(s.get("evidence", ""))[:240],
             )
         )

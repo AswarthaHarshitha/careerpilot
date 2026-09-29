@@ -71,6 +71,9 @@ class Project(Base):
     topics: Mapped[list] = mapped_column(JSON, default=list)
     readme_excerpt: Mapped[str] = mapped_column(Text, default="")
     readme_sha: Mapped[str] = mapped_column(String(64), default="")
+    # Evidence cache: structured summary of the last scan (languages, frameworks, dependencies, tests, deployment,
+    # README summary, confidence). A repository is re-read only when it changed, the cache expired, or on request.
+    analysis: Mapped[dict] = mapped_column(JSON, default=dict)
     file_count: Mapped[int | None] = mapped_column(Integer)
     stars: Mapped[int] = mapped_column(Integer, default=0)
     pushed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)

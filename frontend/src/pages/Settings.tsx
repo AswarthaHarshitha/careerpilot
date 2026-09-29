@@ -9,16 +9,10 @@ import {
 import { del, get, post, put } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fmtDateTime, relative } from '../lib/format'
-import type { Template } from '../lib/types'
+import type { SettingsData, Template } from '../lib/types'
+import { AIUsagePanel, ProviderChoice, ProviderList } from '../components/AIProviders'
 
-type S = {
-  default_template_id: number | null; resume_max_pages: number; max_projects: number; max_bullets_per_project: number
-  timezone: string; submit_confirmation_mode: 'type_company' | 'click'; deadline_reminder_days: number
-  follow_up_after_days: number; notify_in_app: boolean
-  header_portfolio: 'template' | 'include' | 'exclude'; header_github: 'template' | 'include' | 'exclude'; header_linkedin: 'template' | 'include' | 'exclude' 
-  ai: { provider: string; model: string; base_url: string; api_key: string; server_provider: string; server_model: string }
-  github: { username: string; token: string; include_private_repos: boolean; include_forks: boolean; last_scan_at: string | null; server_token: boolean }
-}
+type S = SettingsData
 type TabKey = 'resume' | 'github' | 'applications' | 'automation' | 'ai' | 'notifications' | 'security' | 'data'
 
 export default function Settings() {
@@ -30,7 +24,7 @@ export default function Settings() {
       <PageHeader title="Settings" />
       <Tabs className="mb-6" value={tab} onChange={(v) => setParams({ tab: v })} tabs={[
         { value: 'resume', label: 'Resume' }, { value: 'github', label: 'GitHub' }, { value: 'applications', label: 'Applications' },
-        { value: 'automation', label: 'Browser automation' }, { value: 'ai', label: 'AI provider' }, { value: 'notifications', label: 'Notifications' },
+        { value: 'automation', label: 'Browser automation' }, { value: 'ai', label: 'AI providers' }, { value: 'notifications', label: 'Notifications' },
         { value: 'security', label: 'Security' }, { value: 'data', label: 'Data' },
       ]} />
       {q.isLoading ? <LoadingRows /> : q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
@@ -202,40 +196,15 @@ function Automation() {
 }
 
 function AI({ s }: { s: S }) {
-  const [provider, setProvider] = useState(s.ai.provider)
-  const [model, setModel] = useState(s.ai.model)
-  const [base, setBase] = useState(s.ai.base_url)
-  const [key, setKey] = useState('')
-  const save = useSettingsSave<Record<string, unknown>>('/api/settings/ai')
-  const toast = useToast()
-  const test = useMutation({ mutationFn: () => post<{ provider: string }>('/api/settings/ai/test'), onSuccess: (r) => toast(`Connected to ${r.provider}`), onError: (e) => toast(errorText(e), 'error') })
   return (
-    <Card>
-      <CardHeader title="AI provider" subtitle="Used for JD interpretation, wording and answer drafts. Every output is validated; facts come only from your profile and verified evidence." />
-      <form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); save.mutate({ provider, model, base_url: base, api_key: key ? key : null }) }}>
-        <Field label="Provider">
-          <Select value={provider} onChange={(e) => setProvider(e.target.value)}>
-            <option value="server">Server default ({s.ai.server_provider === 'none' ? 'none configured' : `${s.ai.server_provider}${s.ai.server_model ? ' · ' + s.ai.server_model : ''}`})</option>
-            <option value="none">None - deterministic analysis only</option>
-            <option value="gemini">Google Gemini (your key)</option>
-            <option value="openai_compatible">OpenAI-compatible server (your key or local model)</option>
-          </Select>
-        </Field>
-        {(provider === 'gemini' || provider === 'openai_compatible') && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Model"><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === 'gemini' ? 'gemini-2.5-flash' : 'model name'} /></Field>
-            {provider === 'openai_compatible' && <Field label="Base URL"><Input value={base} onChange={(e) => setBase(e.target.value)} placeholder="https://api.example.com/v1" /></Field>}
-            <Field label="API key" className="sm:col-span-2" hint={s.ai.api_key ? <>Stored encrypted: <span className="font-mono">{s.ai.api_key}</span></> : 'Stored encrypted; never shown again.'}>
-              <Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={s.ai.api_key ? 'Leave blank to keep' : ''} />
-            </Field>
-          </div>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button type="button" loading={test.isPending} onClick={() => test.mutate()}>Test connection</Button>
-          <Button type="submit" variant="primary" loading={save.isPending}>Save</Button>
-        </div>
-      </form>
-    </Card>
+    <>
+      <Card>
+        <CardHeader title="AI providers" subtitle="Used for reading job descriptions, wording and the editor assistant. Every output is checked; facts come only from your profile and verified evidence. Keys stay on the server." />
+        <div className="p-5"><ProviderChoice ai={s.ai} /></div>
+        <div className="border-t border-line"><ProviderList ai={s.ai} /></div>
+      </Card>
+      <AIUsagePanel />
+    </>
   )
 }
 
