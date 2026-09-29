@@ -27,8 +27,14 @@ def test_pdf_template_is_analysed_rebuilt_and_used(auth_client, fixture_pdf):
     task = c.get(f"/api/tasks/{r.json()['task_id']}").json()
     assert task["status"] == "succeeded", task
     tpl = c.get(f"/api/templates/{r.json()['template']['id']}").json()
-    assert [s["kind"] for s in tpl["sections"]] == ["summary", "experience", "projects", "skills", "education",
-                                                     "achievements"]
+    assert [s["kind"] for s in tpl["sections"]] == [
+        "summary",
+        "experience",
+        "projects",
+        "skills",
+        "education",
+        "achievements",
+    ]
     fp = tpl["fingerprint"]
     assert fp["layout"] == "One-column" and fp["text"] == "Selectable" and fp["pages"] == 1
     cmp = tpl["comparison"]
@@ -92,8 +98,11 @@ B.Tech in Computer Science
 
 
 def test_overleaf_zip_inlines_inputs(auth_client):
-    main = TEX.replace("\\section{Summary}\nSoftware engineering graduate who builds backend services and full-stack "
-                       "web applications with Python, Java and SQL.", "\\input{sections/summary}")
+    main = TEX.replace(
+        "\\section{Summary}\nSoftware engineering graduate who builds backend services and full-stack "
+        "web applications with Python, Java and SQL.",
+        "\\input{sections/summary}",
+    )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("main.tex", main)
@@ -108,11 +117,25 @@ def test_overleaf_zip_inlines_inputs(auth_client):
 
 def test_standard_layout_from_profile(auth_client):
     c = auth_client
-    c.put("/api/profile", json={"full_name": "Test Candidate", "email": "candidate@example.com",
-                                "github_url": "https://github.com/example", "summary": "Builds backend services."})
-    c.post("/api/profile/experiences", json={"organization": "Example Labs", "title": "Intern",
-                                             "start_date": "Jan 2026", "end_date": "Mar 2026",
-                                             "bullets": ["Built REST APIs with FastAPI."]})
+    c.put(
+        "/api/profile",
+        json={
+            "full_name": "Test Candidate",
+            "email": "candidate@example.com",
+            "github_url": "https://github.com/example",
+            "summary": "Builds backend services.",
+        },
+    )
+    c.post(
+        "/api/profile/experiences",
+        json={
+            "organization": "Example Labs",
+            "title": "Intern",
+            "start_date": "Jan 2026",
+            "end_date": "Mar 2026",
+            "bullets": ["Built REST APIs with FastAPI."],
+        },
+    )
     c.post("/api/profile/skills", json={"name": "Python", "category": "Programming Languages"})
     r = c.post("/api/templates/from-profile")
     assert r.status_code == 200, r.text

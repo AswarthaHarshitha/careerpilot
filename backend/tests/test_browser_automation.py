@@ -43,11 +43,21 @@ def test_login_and_captcha_are_handed_to_the_user(site):
 
 
 def _prepare(c, site):
-    c.put("/api/profile", json={
-        "full_name": "Test Candidate", "first_name": "Test", "last_name": "Candidate",
-        "email": "candidate@example.com", "phone": "+00 0000000000", "linkedin_url": "https://linkedin.com/in/example",
-        "github_url": "https://github.com/example", "work_authorization": "Authorized to work in India",
-        "requires_sponsorship": False, "years_of_experience": 0.5})
+    c.put(
+        "/api/profile",
+        json={
+            "full_name": "Test Candidate",
+            "first_name": "Test",
+            "last_name": "Candidate",
+            "email": "candidate@example.com",
+            "phone": "+00 0000000000",
+            "linkedin_url": "https://linkedin.com/in/example",
+            "github_url": "https://github.com/example",
+            "work_authorization": "Authorized to work in India",
+            "requires_sponsorship": False,
+            "years_of_experience": 0.5,
+        },
+    )
     data = (FIXTURES / "templates" / "jake_style.tex").read_bytes()
     c.post("/api/templates", files={"file": ("resume.tex", data, "text/plain")})
     run_tasks()
@@ -76,8 +86,9 @@ def _start_runner(token, tmp_path, user_wait=60):
     def target():
         with TestClient(create_app()) as http:
             api = Api("", token, http=http)
-            results.extend(run_loop(api, headless=True, once=True, profile_dir=str(tmp_path / "profile"),
-                                    user_wait=user_wait))
+            results.extend(
+                run_loop(api, headless=True, once=True, profile_dir=str(tmp_path / "profile"), user_wait=user_wait)
+            )
 
     t = threading.Thread(target=target, daemon=True)
     t.start()
@@ -91,8 +102,10 @@ def _wait(c, app_id, pred, timeout=60):
         if pred(a):
             return a
         time.sleep(0.5)
-    raise AssertionError(f"timed out; last session state: {a['session'] and a['session']['state']} "
-                         f"{a['session'] and a['session']['message']}")
+    raise AssertionError(
+        f"timed out; last session state: {a['session'] and a['session']['state']} "
+        f"{a['session'] and a['session']['message']}"
+    )
 
 
 @pytest.mark.skipif(resolve_engine() is None, reason="no LaTeX engine installed")
@@ -104,8 +117,14 @@ def test_assisted_application_submits_only_after_confirmation(auth_client, site,
     thread, results = _start_runner(token, tmp_path)
 
     # step 2 of the form is reached and inspected
-    a = _wait(c, app_id, lambda a: any(f["field_key"] == "why_company" for f in a["fields"])
-              and a["session"]["state"] in ("awaiting_answers", "awaiting_review"))
+    a = _wait(
+        c,
+        app_id,
+        lambda a: (
+            any(f["field_key"] == "why_company" for f in a["fields"])
+            and a["session"]["state"] in ("awaiting_answers", "awaiting_review")
+        ),
+    )
     by_key = {f["field_key"]: f for f in a["fields"]}
     assert by_key["first_name"]["value"] == "Test" and by_key["first_name"]["status"] == "filled"
     assert by_key["resume"]["status"] == "filled"
@@ -119,16 +138,26 @@ def test_assisted_application_submits_only_after_confirmation(auth_client, site,
     r = c.post(f"/api/applications/{app_id}/automation/confirm-submit", json={"typed_confirmation": "IBM"})
     assert r.status_code == 400
 
-    answers = {"work_authorization": ("Yes", True), "sponsorship": (None, True), "consent": (None, True),
-               "why_company": ("I want to build developer platform services with Python.", True),
-               "gender": ("Prefer not to say", True)}
+    answers = {
+        "work_authorization": ("Yes", True),
+        "sponsorship": (None, True),
+        "consent": (None, True),
+        "why_company": ("I want to build developer platform services with Python.", True),
+        "gender": ("Prefer not to say", True),
+    }
     for key, (value, confirm) in answers.items():
         f = by_key[key]
         r = c.patch(f"/api/applications/{app_id}/fields/{f['id']}", json={"value": value, "confirm": confirm})
         assert r.status_code == 200, r.text
 
-    a = _wait(c, app_id, lambda a: a["session"]["state"] == "awaiting_review"
-              and a["session"]["filled_revision"] >= a["session"]["answers_revision"])
+    a = _wait(
+        c,
+        app_id,
+        lambda a: (
+            a["session"]["state"] == "awaiting_review"
+            and a["session"]["filled_revision"] >= a["session"]["answers_revision"]
+        ),
+    )
     time.sleep(1.0)
     assert SUBMISSIONS == []  # still nothing submitted
 
@@ -159,8 +188,14 @@ def test_cancelled_session_never_submits(auth_client, site, tmp_path):
     app_id, token = _prepare(c, site)
     c.post(f"/api/applications/{app_id}/automation", json={})
     thread, results = _start_runner(token, tmp_path)
-    _wait(c, app_id, lambda a: a["session"]["state"] in ("awaiting_answers", "awaiting_review")
-          and any(f["field_key"] == "resume" for f in a["fields"]))
+    _wait(
+        c,
+        app_id,
+        lambda a: (
+            a["session"]["state"] in ("awaiting_answers", "awaiting_review")
+            and any(f["field_key"] == "resume" for f in a["fields"])
+        ),
+    )
     c.post(f"/api/applications/{app_id}/automation/cancel")
     thread.join(timeout=30)
     assert results == ["cancelled"]

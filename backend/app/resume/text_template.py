@@ -76,26 +76,49 @@ def parse_text(text: str) -> dict:
                 parts = [p.strip() for p in re.split(r"\s+\|\s+|\s{2,}|\s+[—–]\s+(?=\S*\d)", clean) if p.strip()]
                 dates = next((p for p in parts if DATE_RX.search(p) and len(p) < 40), "")
                 rest = [p for p in parts if p != dates]
-                if current is not None and not current["bullets"] and not current.get("title2") and rest and \
-                        kind != "projects":
+                if (
+                    current is not None
+                    and not current["bullets"]
+                    and not current.get("title2")
+                    and rest
+                    and kind != "projects"
+                ):
                     current["title2"] = rest[0]
                     current["location"] = rest[1] if len(rest) > 1 else ""
                     continue
                 url = next((u for u in URL.findall(b)), "")
-                current = {"name": rest[0] if rest else clean, "dates": dates, "bullets": [], "tech": [],
-                           "url": url, "extra": rest[1:]}
+                current = {
+                    "name": rest[0] if rest else clean,
+                    "dates": dates,
+                    "bullets": [],
+                    "tech": [],
+                    "url": url,
+                    "extra": rest[1:],
+                }
                 {"experience": exps, "projects": projects, "education": edus}[kind].append(current)
         elif kind in ("certifications", "achievements"):
             items = [re.sub(r"^\s*[-*•]\s+", "", b).strip() for b in body]
             (certs if kind == "certifications" else achievements).extend(x for x in items if x)
     return {
         "profile": profile,
-        "experiences": [{"organization": e["name"], "dates": e["dates"], "title": e.get("title2", ""),
-                         "location": e.get("location", ""), "bullets": e["bullets"], "tech": e["tech"]} for e in exps],
-        "projects": [{"title": p["name"], "url": p["url"], "bullets": p["bullets"], "tech": p["tech"]} for p in projects],
+        "experiences": [
+            {
+                "organization": e["name"],
+                "dates": e["dates"],
+                "title": e.get("title2", ""),
+                "location": e.get("location", ""),
+                "bullets": e["bullets"],
+                "tech": e["tech"],
+            }
+            for e in exps
+        ],
+        "projects": [
+            {"title": p["name"], "url": p["url"], "bullets": p["bullets"], "tech": p["tech"]} for p in projects
+        ],
         "skills": skills,
-        "educations": [{"institution": e["name"], "degree": e.get("title2", ""), "end": e["dates"], "grade": ""}
-                       for e in edus],
+        "educations": [
+            {"institution": e["name"], "degree": e.get("title2", ""), "end": e["dates"], "grade": ""} for e in edus
+        ],
         "certifications": certs,
         "achievements": achievements,
     }
@@ -103,5 +126,12 @@ def parse_text(text: str) -> dict:
 
 def text_to_latex(text: str) -> str:
     d = parse_text(text)
-    return build(d["profile"], d["experiences"], d["projects"], d["skills"], d["educations"], d["certifications"],
-                 d["achievements"])
+    return build(
+        d["profile"],
+        d["experiences"],
+        d["projects"],
+        d["skills"],
+        d["educations"],
+        d["certifications"],
+        d["achievements"],
+    )

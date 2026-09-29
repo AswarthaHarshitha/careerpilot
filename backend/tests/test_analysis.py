@@ -85,16 +85,19 @@ def test_benefits_and_company_sections_do_not_create_requirements():
 def test_dependencies_are_verified_evidence():
     pkg = '{"dependencies": {"react": "^18", "express": "^4"}, "devDependencies": {"vitest": "1"}}'
     assert set(parse_dependencies("package.json", pkg)) == {"react", "express", "vitest"}
-    a = analyze_repository(description="", homepage="", topics=[], tree=[("package.json", 100)], readme="",
-                           manifests={"package.json": pkg})
+    a = analyze_repository(
+        description="", homepage="", topics=[], tree=[("package.json", 100)], readme="", manifests={"package.json": pkg}
+    )
     verified = {e.canonical for e in a.evidence if e.status == "verified" and e.source_type == "dependency"}
     assert {"react", "express", "jest"} <= verified
 
 
 def test_readme_negations_are_not_evidence():
-    readme = ("# App\nBuilt with FastAPI and PostgreSQL.\n\nA layered monolith - no microservices, no queue.\n"
-              "We deliberately did not add Celery/Redis.\n\n## Roadmap\n- Kubernetes deployment\n"
-              "Setup script: `bootstrap_admin.py`.")
+    readme = (
+        "# App\nBuilt with FastAPI and PostgreSQL.\n\nA layered monolith - no microservices, no queue.\n"
+        "We deliberately did not add Celery/Redis.\n\n## Roadmap\n- Kubernetes deployment\n"
+        "Setup script: `bootstrap_admin.py`."
+    )
     a = analyze_repository(description="", homepage="", topics=[], tree=[], readme=readme, manifests={})
     keys = {e.canonical for e in a.evidence if e.source_type == "readme"}
     assert {"fastapi", "postgresql"} <= keys
@@ -107,8 +110,9 @@ def test_negation_helper():
 
 
 def test_file_name_hints_are_only_inferred():
-    a = analyze_repository(description="", homepage="", topics=[], tree=[("app/permissions.py", 10)], readme="",
-                           manifests={})
+    a = analyze_repository(
+        description="", homepage="", topics=[], tree=[("app/permissions.py", 10)], readme="", manifests={}
+    )
     rbac = [e for e in a.evidence if e.canonical == "rbac"]
     assert rbac and all(e.status == "inferred" for e in rbac)
 
@@ -121,9 +125,17 @@ def _profile():
         skills={"python": 1, "sql": 2, "kubernetes": 3, "dsa": 4},
         experiences=[ExperienceSnapshot(1, "Intern at Example Labs", "Built REST APIs in Python with FastAPI")],
         projects=[
-            ProjectSnapshot(10, "Taskboard", "Task tracker", [("fastapi", "verified", "FastAPI", "requirements.txt"),
-                                                             ("postgresql", "verified", "PostgreSQL", "psycopg"),
-                                                             ("docker", "inferred", "Docker", "")], []),
+            ProjectSnapshot(
+                10,
+                "Taskboard",
+                "Task tracker",
+                [
+                    ("fastapi", "verified", "FastAPI", "requirements.txt"),
+                    ("postgresql", "verified", "PostgreSQL", "psycopg"),
+                    ("docker", "inferred", "Docker", ""),
+                ],
+                [],
+            ),
             ProjectSnapshot(11, "Gallery", "Photo site", [("react", "verified", "React", "package.json")], []),
         ],
         educations=[(1, "B.Tech Computer Science Example University")],
@@ -132,13 +144,15 @@ def _profile():
 
 
 def _reqs():
-    return [RequirementInput(1, "skill", "Python", "python", "required"),
-            RequirementInput(2, "skill", "Kubernetes", "kubernetes", "preferred"),
-            RequirementInput(3, "skill", "Docker", "docker", "required"),
-            RequirementInput(4, "skill", "AWS", "aws", "preferred"),
-            RequirementInput(5, "skill", "MySQL", "mysql", "required"),
-            RequirementInput(6, "experience", "2+ years of experience", "", "required"),
-            RequirementInput(7, "education", "Bachelor's degree in Computer Science", "", "required")]
+    return [
+        RequirementInput(1, "skill", "Python", "python", "required"),
+        RequirementInput(2, "skill", "Kubernetes", "kubernetes", "preferred"),
+        RequirementInput(3, "skill", "Docker", "docker", "required"),
+        RequirementInput(4, "skill", "AWS", "aws", "preferred"),
+        RequirementInput(5, "skill", "MySQL", "mysql", "required"),
+        RequirementInput(6, "experience", "2+ years of experience", "", "required"),
+        RequirementInput(7, "education", "Bachelor's degree in Computer Science", "", "required"),
+    ]
 
 
 def test_match_statuses_are_evidence_based():
@@ -165,14 +179,25 @@ def test_oracle_recruiting_cloud_postings_are_read_from_the_job_api(monkeypatch)
     from app.core.fetch import FetchResult
     from app.jobs import platforms
 
-    page = ('<html><head><meta property="og:site_name" content="Acme Corp"/></head><body>'
-            '<base href="/en/sites/jobsearch" data-apibaseurl="https://acme.fa.us2.oraclecloud.com:443">'
-            '<link href="https://acme.fa.us2.oraclecloud.com/hcmRestApi/CandidateExperience/x.png?siteNumber=CX_45001">'
-            "<script>/* CandidateExperience */</script></body></html>")
-    api = {"items": [{"Id": "344317", "Title": "Application Software Engineer 1", "PrimaryLocation": "Bengaluru, India",
-                      "ExternalDescriptionStr": "<p>Build software with Java and SQL.</p>" * 5,
-                      "ExternalResponsibilitiesStr": "<ul><li>Develop reports using SQL</li></ul>",
-                      "ExternalQualificationsStr": "", "ExternalPostedEndDate": None}]}
+    page = (
+        '<html><head><meta property="og:site_name" content="Acme Corp"/></head><body>'
+        '<base href="/en/sites/jobsearch" data-apibaseurl="https://acme.fa.us2.oraclecloud.com:443">'
+        '<link href="https://acme.fa.us2.oraclecloud.com/hcmRestApi/CandidateExperience/x.png?siteNumber=CX_45001">'
+        "<script>/* CandidateExperience */</script></body></html>"
+    )
+    api = {
+        "items": [
+            {
+                "Id": "344317",
+                "Title": "Application Software Engineer 1",
+                "PrimaryLocation": "Bengaluru, India",
+                "ExternalDescriptionStr": "<p>Build software with Java and SQL.</p>" * 5,
+                "ExternalResponsibilitiesStr": "<ul><li>Develop reports using SQL</li></ul>",
+                "ExternalQualificationsStr": "",
+                "ExternalPostedEndDate": None,
+            }
+        ]
+    }
     seen = []
 
     def fake_fetch(url, **kw):
@@ -183,8 +208,12 @@ def test_oracle_recruiting_cloud_postings_are_read_from_the_job_api(monkeypatch)
 
     monkeypatch.setattr(platforms, "fetch", fake_fetch)
     p = platforms.fetch_posting("https://careers.acme.com/en/sites/jobsearch/job/344317?keyword=engineer")
-    assert (p.platform, p.company, p.title, p.job_code) == ("oracle", "Acme Corp", "Application Software Engineer 1",
-                                                            "344317")
+    assert (p.platform, p.company, p.title, p.job_code) == (
+        "oracle",
+        "Acme Corp",
+        "Application Software Engineer 1",
+        "344317",
+    )
     assert 'Id="344317",siteNumber=CX_45001' in seen[1] and seen[1].startswith("https://acme.fa.us2.oraclecloud.com")
     assert "Develop reports using SQL" in p.description_text
     assert p.deadline is None  # no end date in the data, so none is invented

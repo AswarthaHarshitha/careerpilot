@@ -22,16 +22,37 @@ def add_github_project(user_email="owner@example.com"):
 
     db = session_factory()()
     uid = db.scalar(select(User.id).where(User.email == user_email))
-    p = Project(user_id=uid, name="resolve", display_name="Resolve", slug="resolve", origin="github",
-                description="Issue-resolution platform with SLA tracking", repo_full_name="example/resolve",
-                repo_url="https://github.com/example/resolve")
+    p = Project(
+        user_id=uid,
+        name="resolve",
+        display_name="Resolve",
+        slug="resolve",
+        origin="github",
+        description="Issue-resolution platform with SLA tracking",
+        repo_full_name="example/resolve",
+        repo_url="https://github.com/example/resolve",
+    )
     db.add(p)
     db.flush()
-    for key, label, src in (("fastapi", "FastAPI", "dependency"), ("postgresql", "PostgreSQL", "dependency"),
-                            ("docker", "Docker", "file_tree"), ("pytest", "pytest", "dependency"),
-                            ("python", "Python", "language")):
-        db.add(ProjectEvidence(project_id=p.id, kind="technology", label=label, canonical=key, category="",
-                               status="verified", source_type=src, source_detail="test fixture"))
+    for key, label, src in (
+        ("fastapi", "FastAPI", "dependency"),
+        ("postgresql", "PostgreSQL", "dependency"),
+        ("docker", "Docker", "file_tree"),
+        ("pytest", "pytest", "dependency"),
+        ("python", "Python", "language"),
+    ):
+        db.add(
+            ProjectEvidence(
+                project_id=p.id,
+                kind="technology",
+                label=label,
+                canonical=key,
+                category="",
+                status="verified",
+                source_type=src,
+                source_detail="test fixture",
+            )
+        )
     db.commit()
     pid = p.id
     db.close()
@@ -40,14 +61,25 @@ def add_github_project(user_email="owner@example.com"):
 
 def test_profile_crud(auth_client):
     c = auth_client
-    r = c.put("/api/profile", json={"full_name": "Test Owner", "email": "owner@example.com", "phone": "+1 555 0100",
-                                    "linkedin_url": "linkedin.com/in/test", "years_of_experience": 0.5})
+    r = c.put(
+        "/api/profile",
+        json={
+            "full_name": "Test Owner",
+            "email": "owner@example.com",
+            "phone": "+1 555 0100",
+            "linkedin_url": "linkedin.com/in/test",
+            "years_of_experience": 0.5,
+        },
+    )
     assert r.status_code == 200 and r.json()["linkedin_url"] == "https://linkedin.com/in/test"
-    assert c.post("/api/profile/skills", json={"name": "Postgres", "category": "Databases"}).json()["canonical"] == \
-        "postgresql"
+    assert (
+        c.post("/api/profile/skills", json={"name": "Postgres", "category": "Databases"}).json()["canonical"]
+        == "postgresql"
+    )
     assert c.post("/api/profile/skills", json={"name": "PostgreSQL"}).status_code == 409
-    e = c.post("/api/profile/experiences", json={"organization": "Example Labs", "title": "Intern",
-                                                 "bullets": ["Built APIs"]}).json()
+    e = c.post(
+        "/api/profile/experiences", json={"organization": "Example Labs", "title": "Intern", "bullets": ["Built APIs"]}
+    ).json()
     assert e["bullets"] == ["Built APIs"]
     profile = c.get("/api/profile").json()
     assert "Education" in profile["completeness"]["missing"]
@@ -62,8 +94,11 @@ def test_template_upload_rejects_pdf_and_unsafe(auth_client):
     run_tasks()
     task = c.get(f"/api/tasks/{r.json()['task_id']}").json()
     assert task["status"] == "failed" and task["result"]["error"]["code"] == "pdf_unreadable"
-    bad = (FIXTURES / "templates" / "jake_style.tex").read_text().replace("\\begin{document}",
-                                                                         "\\immediate\\write18{id}\\begin{document}")
+    bad = (
+        (FIXTURES / "templates" / "jake_style.tex")
+        .read_text()
+        .replace("\\begin{document}", "\\immediate\\write18{id}\\begin{document}")
+    )
     r = c.post("/api/templates", files={"file": ("x.tex", bad.encode(), "text/plain")})
     assert r.status_code == 400 and r.json()["error"]["code"] == "unsafe_template"
     r = c.post("/api/templates", files={"file": ("x.exe", b"MZ", "application/octet-stream")})

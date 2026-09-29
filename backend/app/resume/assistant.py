@@ -28,12 +28,21 @@ class Plan:
 
 
 LINK_WORDS = {"portfolio": r"portfolio|personal (?:web)?site|website", "github": r"git ?hub", "linkedin": r"linked ?in"}
-SECTION_WORDS = {"summary": r"summary|profile|objective", "projects": r"projects?", "experience": r"experience|internships?|work",
-                 "skills": r"skills?", "education": r"education", "certifications": r"certifications?",
-                 "achievements": r"achievements?|awards?"}
-REWRITE = re.compile(r"\b(shorten|shorter|concise|trim|tighten|natural|stronger|improve|rewrite|reword|rephrase|"
-                     r"emphasi[sz]e|focus|polish|clean ?up|simplify|clearer|less generic|two lines|2 lines|one line|1 line|"
-                     r"make .* (?:better|backend|technical))\b", re.I)
+SECTION_WORDS = {
+    "summary": r"summary|profile|objective",
+    "projects": r"projects?",
+    "experience": r"experience|internships?|work",
+    "skills": r"skills?",
+    "education": r"education",
+    "certifications": r"certifications?",
+    "achievements": r"achievements?|awards?",
+}
+REWRITE = re.compile(
+    r"\b(shorten|shorter|concise|trim|tighten|natural|stronger|improve|rewrite|reword|rephrase|"
+    r"emphasi[sz]e|focus|polish|clean ?up|simplify|clearer|less generic|two lines|2 lines|one line|1 line|"
+    r"make .* (?:better|backend|technical))\b",
+    re.I,
+)
 
 
 def _norm(s: str) -> str:
@@ -41,8 +50,12 @@ def _norm(s: str) -> str:
 
 
 def _entries(content: dict, kind: str | None = None) -> list[tuple[dict, dict]]:
-    return [(s, e) for s in content["sections"] if not s.get("removed") and (kind is None or s["kind"] == kind)
-            for e in s.get("entries") or []]
+    return [
+        (s, e)
+        for s in content["sections"]
+        if not s.get("removed") and (kind is None or s["kind"] == kind)
+        for e in s.get("entries") or []
+    ]
 
 
 def _match_entry(content: dict, text: str) -> tuple[dict, dict] | None:
@@ -51,9 +64,9 @@ def _match_entry(content: dict, text: str) -> tuple[dict, dict] | None:
     for s, e in _entries(content):
         for cand in (e["fields"].get("short_name", ""), e["fields"].get("primary", "")):
             c = _norm(cand)
-            if c and (c in t or (len(t) >= 4 and t in c)):
-                if best is None or len(c) > len(_norm(best[1]["fields"].get("short_name", ""))):
-                    best = (s, e)
+            matches = c and (c in t or (len(t) >= 4 and t in c))
+            if matches and (best is None or len(c) > len(_norm(best[1]["fields"].get("short_name", "")))):
+                best = (s, e)
     return best
 
 
@@ -67,8 +80,13 @@ def _sections_named(content: dict, low: str) -> list[dict]:
     return found
 
 
-def plan(content: dict, instruction: str, selection: list[str], provider: LLMProvider | None,
-         jd_focus: list[str] | None = None) -> Plan:
+def plan(
+    content: dict,
+    instruction: str,
+    selection: list[str],
+    provider: LLMProvider | None,
+    jd_focus: list[str] | None = None,
+) -> Plan:
     p = Plan()
     text = instruction.strip()
     low = text.lower()
@@ -78,8 +96,12 @@ def plan(content: dict, instruction: str, selection: list[str], provider: LLMPro
     elements = index(content)
 
     # explicit replacement: 'replace this with: "..."' / 'change it to ...'
-    m = re.search(r"(?:replace|change|set)\s+(?:this|it|the selected \w+|this \w+)?\s*(?:sentence|bullet|text|line)?\s*"
-                  r"(?:with|to)\s*[:\-]?\s*[\"“]?(.+?)[\"”]?\s*$", text, re.I)
+    m = re.search(
+        r"(?:replace|change|set)\s+(?:this|it|the selected \w+|this \w+)?\s*(?:sentence|bullet|text|line)?\s*"
+        r"(?:with|to)\s*[:\-]?\s*[\"“]?(.+?)[\"”]?\s*$",
+        text,
+        re.I,
+    )
     if m and selection and len(selection) == 1 and selection[0] in elements:
         p.ops.append({"op": "update_text", "id": selection[0], "text": m.group(1).strip()})
         p.summary.append("Replace the selected text with your wording")
@@ -123,8 +145,9 @@ def plan(content: dict, instruction: str, selection: list[str], provider: LLMPro
                     pos = j if other_m.group(1) in ("above", "before") else j + 1
             if pos is not None:
                 p.ops.append({"op": "move_entry", "id": e["id"], "position": pos})
-                p.summary.append(f"Move {e['fields'].get('short_name') or e['fields'].get('primary')} to position "
-                                 f"{pos + 1}")
+                p.summary.append(
+                    f"Move {e['fields'].get('short_name') or e['fields'].get('primary')} to position {pos + 1}"
+                )
                 return p
 
     # page target
@@ -134,8 +157,10 @@ def plan(content: dict, instruction: str, selection: list[str], provider: LLMPro
         p.ops.append({"op": "set_page_target", "pages": pages})
         p.summary.append(f"Set the page target to {pages}")
         p.broad = True
-        p.message = ("I'll fit the resume to the page by removing the least relevant content first; the full list of "
-                     "changes appears after applying, and you can undo it.")
+        p.message = (
+            "I'll fit the resume to the page by removing the least relevant content first; the full list of "
+            "changes appears after applying, and you can undo it."
+        )
         return p
 
     # remove / restore whole sections or entries
@@ -175,8 +200,10 @@ def plan(content: dict, instruction: str, selection: list[str], provider: LLMPro
     if REWRITE.search(low):
         return _rewrite(content, text, selection, provider, jd_focus or [], p)
 
-    p.message = ("I couldn't turn that into a specific change. Try things like “put Resolve first”, “remove the "
-                 "portfolio link”, “shorten the summary”, or select a bullet and say “make this more natural”.")
+    p.message = (
+        "I couldn't turn that into a specific change. Try things like “put Resolve first”, “remove the "
+        "portfolio link”, “shorten the summary”, or select a bullet and say “make this more natural”."
+    )
     return p
 
 
@@ -191,18 +218,25 @@ def _skills_change(content: dict, action: str, name: str, p: Plan) -> Plan:
         if not p.ops:
             p.message = f"{name} is not in your skills section."
         return p
-    p.refused.append(f"Adding “{name}” needs evidence. Add it to your profile skills or a project first; the "
-                     "resume only lists skills your profile or verified evidence supports.")
+    p.refused.append(
+        f"Adding “{name}” needs evidence. Add it to your profile skills or a project first; the "
+        "resume only lists skills your profile or verified evidence supports."
+    )
     p.message = p.refused[-1]
     return p
 
 
 def _targets(content: dict, low: str, selection: list[str], include_user_edits: bool) -> list[tuple[str, dict]]:
     elements = index(content)
-    if selection:
-        return [(i, elements[i]) for i in selection if i in elements and elements[i]["type"] in
-                ("bullet", "paragraph", "item")]
     secs = _sections_named(content, low)
+    named_ids = {s["id"] for s in secs}
+    # a section named in the request wins over a selection left over from earlier editing
+    if selection and not (named_ids and not any(elements.get(i, {}).get("section") in named_ids for i in selection)):
+        return [
+            (i, elements[i])
+            for i in selection
+            if i in elements and elements[i]["type"] in ("bullet", "paragraph", "item")
+        ]
     whole = re.search(r"\b(whole|entire|everything|all|resume)\b", low) and not secs
     out = []
     for eid, el in elements.items():
@@ -227,19 +261,23 @@ REWRITE_SYSTEM = (
 )
 
 
-def _rewrite(content: dict, text: str, selection: list[str], provider: LLMProvider | None, focus: list[str],
-             p: Plan) -> Plan:
+def _rewrite(
+    content: dict, text: str, selection: list[str], provider: LLMProvider | None, focus: list[str], p: Plan
+) -> Plan:
     low = text.lower()
-    include_user = bool(re.search(r"including (?:my|the) edits|my edits too|everything including", low)) or bool(selection)
+    include_user = bool(re.search(r"including (?:my|the) edits|my edits too|everything including", low)) or (
+        bool(selection) and not _sections_named(content, low)
+    )
     targets = _targets(content, low, selection, include_user)
     if not targets:
-        p.message = ("Select the text to change, or name the section (summary, projects, experience).")
+        p.message = "Select the text to change, or name the section (summary, projects, experience)."
         return p
     if provider is None:
         return _deterministic_rewrite(targets, low, p)
     items = {eid: el["text"] for eid, el in targets}
-    prompt = (f"Request: {text}\nSkills the job cares about: {', '.join(focus[:12])}\n\n"
-              + wrap_untrusted("ITEMS", json.dumps(items, ensure_ascii=False), 12000))
+    prompt = f"Request: {text}\nSkills the job cares about: {', '.join(focus[:12])}\n\n" + wrap_untrusted(
+        "ITEMS", json.dumps(items, ensure_ascii=False), 12000
+    )
     try:
         data = provider.complete_json(REWRITE_SYSTEM, prompt, max_tokens=3000, temperature=0.3)
     except LLMError as exc:
@@ -267,8 +305,10 @@ def _rewrite(content: dict, text: str, selection: list[str], provider: LLMProvid
 def _deterministic_rewrite(targets: list[tuple[str, dict]], low: str, p: Plan) -> Plan:
     """Without a model, only removals are safe: shorten by dropping trailing clauses or sentences, never adding."""
     if not re.search(r"shorten|shorter|concise|trim|tighten|two lines|2 lines|one line|1 line|brief", low):
-        p.message = ("Rewording needs an AI provider (Settings → AI provider). Without one I can shorten text, move, "
-                     "remove and restore content, and change links and sections.")
+        p.message = (
+            "Rewording needs an AI provider (Settings → AI provider). Without one I can shorten text, move, "
+            "remove and restore content, and change links and sections."
+        )
         return p
     for eid, el in targets:
         t = el["text"]
@@ -305,6 +345,11 @@ def preview(content: dict, ops: list[dict]) -> list[dict]:
     after = index(after_doc)
     out = []
     for cid in changed:
-        out.append({"id": cid, "before": (before.get(cid) or {}).get("text", ""),
-                    "after": (after.get(cid) or {}).get("text", "")})
+        out.append(
+            {
+                "id": cid,
+                "before": (before.get(cid) or {}).get("text", ""),
+                "after": (after.get(cid) or {}).get("text", ""),
+            }
+        )
     return out

@@ -33,6 +33,7 @@ class PdfTemplateError(ValueError):
 
 # --- reading ----------------------------------------------------------------------------------------
 
+
 @dataclass
 class Seg:
     x0: float
@@ -109,22 +110,41 @@ def read_rows(doc) -> tuple[list[Row], list[dict], dict]:
             g.sort(key=lambda s: s["bbox"][0])
             segs: list[Seg] = []
             for s in g:
-                icon = bool(ICON_FONTS.search(s["font"])) or (len(s["text"].strip()) == 1 and ord(s["text"].strip()[0]) >
-                                                             0x2400 and s["text"].strip() not in BULLETS)
+                icon = bool(ICON_FONTS.search(s["font"])) or (
+                    len(s["text"].strip()) == 1
+                    and ord(s["text"].strip()[0]) > 0x2400
+                    and s["text"].strip() not in BULLETS
+                )
                 gap = s["bbox"][0] - segs[-1].x1 if segs else 0
                 size = round(s["size"], 1)
                 # a dash or dot is a bullet only as the first glyph of a line ("Jan 2026 – Mar 2026" is not)
                 is_bullet = s["text"].strip() in BULLETS and not segs
                 prev_is_bullet = len(segs) == 1 and segs[0].text in BULLETS
-                if segs and gap < max(12.0, size * 1.4) and not icon and not segs[-1].icon and not is_bullet \
-                        and not prev_is_bullet:
+                if (
+                    segs
+                    and gap < max(12.0, size * 1.4)
+                    and not icon
+                    and not segs[-1].icon
+                    and not is_bullet
+                    and not prev_is_bullet
+                ):
                     joiner = " " if gap > size * 0.15 else ""
                     segs[-1].text += joiner + s["text"].strip()
                     segs[-1].x1 = s["bbox"][2]
                 else:
-                    segs.append(Seg(s["bbox"][0], s["bbox"][2], s["text"].strip(), size, s["font"],
-                                    _is_bold(s["font"], s["flags"]), _is_italic(s["font"], s["flags"]),
-                                    _is_caps(s["font"]), icon))
+                    segs.append(
+                        Seg(
+                            s["bbox"][0],
+                            s["bbox"][2],
+                            s["text"].strip(),
+                            size,
+                            s["font"],
+                            _is_bold(s["font"], s["flags"]),
+                            _is_italic(s["font"], s["flags"]),
+                            _is_caps(s["font"]),
+                            icon,
+                        )
+                    )
             y0 = min(s["bbox"][1] for s in g)
             y1 = max(s["bbox"][3] for s in g)
             row = Row(pno, y0, y1, segs)
@@ -172,6 +192,7 @@ def _ocr_spans(page) -> list[dict]:
 
 # --- understanding ----------------------------------------------------------------------------------
 
+
 def _mode(values: list[float], default: float) -> float:
     vals = [round(v * 2) / 2 for v in values if v]
     return statistics.mode(vals) if vals else default
@@ -190,7 +211,8 @@ def analyse(data: bytes) -> dict:
     if not rows:
         raise PdfTemplateError(
             "No text could be read from this PDF (it looks scanned) and OCR is not available on this server. "
-            "Upload the original .docx or .tex, or a PDF exported from a document editor.")
+            "Upload the original .docx or .tex, or a PDF exported from a document editor."
+        )
     page = doc[0].rect
     all_sizes = [s.size for r in rows for s in r.segs if not s.icon for _ in range(max(1, len(s.text) // 8))]
     body_size = _mode(all_sizes, 10.0)
@@ -205,8 +227,12 @@ def analyse(data: bytes) -> dict:
         if r is name_row or r.bullet or len(r.segs) != 1 or len(r.text) > 45:
             continue
         seg = r.segs[0]
-        styled = seg.size >= body_size + 1.2 or seg.caps or (seg.bold and seg.size >= body_size) or \
-            (r.text.isupper() and len(r.text) > 3)
+        styled = (
+            seg.size >= body_size + 1.2
+            or seg.caps
+            or (seg.bold and seg.size >= body_size)
+            or (r.text.isupper() and len(r.text) > 3)
+        )
         if re.search(r":\s*\S", r.text):
             continue  # "Tools: Git, Docker" is a skills line, not a heading
         ruled = any(rule["page"] == r.page and 0 <= rule["y"] - r.y1 <= 14 for rule in rules)
@@ -233,45 +259,78 @@ def analyse(data: bytes) -> dict:
 
     heading_rows = [rows[i] for i in headings]
     h_seg = heading_rows[0].segs[0]
-    rule_below = any(any(rule["page"] == h.page and 0 <= rule["y"] - h.y1 <= 14 for rule in rules)
-                     for h in heading_rows)
+    rule_below = any(
+        any(rule["page"] == h.page and 0 <= rule["y"] - h.y1 <= 14 for rule in rules) for h in heading_rows
+    )
     rule_w = statistics.median([r["width"] for r in rules]) if rules else 0.4
     bullets = [r for r in rows if r.bullet]
     leading = _leading(rows, body_size)
 
     fp = {
         "page": {"width": round(page.width, 1), "height": round(page.height, 1), "count": len(doc)},
-        "margins": {"left": round(left_margin, 1), "right": round(page.width - right_edge, 1),
-                    "top": round(name_row.y0, 1)},
+        "margins": {
+            "left": round(left_margin, 1),
+            "right": round(page.width - right_edge, 1),
+            "top": round(name_row.y0, 1),
+        },
         "columns": columns,
         "fonts": _font_family(rows),
         "body": {"size": body_size, "leading": round(leading, 2)},
-        "name": {"size": max(s.size for s in name_row.segs), "caps": any(s.caps for s in name_row.segs),
-                 "bold": any(s.bold for s in name_row.segs), "align": _align(name_row, page.width, left_margin),
-                 "text": " ".join(s.text for s in name_row.segs)},
-        "heading": {"size": h_seg.size, "bold": h_seg.bold, "caps": h_seg.caps,
-                    "upper": all(_clean_title(rows[i].text).isupper() for i in headings),
-                    "rule": rule_below, "rule_width": round(rule_w, 2),
-                    "gap_to_rule": round(statistics.median([min((rule["y"] - h.y1 for rule in rules
-                                                                 if rule["page"] == h.page and 0 <= rule["y"] - h.y1
-                                                                 <= 14), default=3)
-                                                            for h in heading_rows]), 1)},
+        "name": {
+            "size": max(s.size for s in name_row.segs),
+            "caps": any(s.caps for s in name_row.segs),
+            "bold": any(s.bold for s in name_row.segs),
+            "align": _align(name_row, page.width, left_margin),
+            "text": " ".join(s.text for s in name_row.segs),
+        },
+        "heading": {
+            "size": h_seg.size,
+            "bold": h_seg.bold,
+            "caps": h_seg.caps,
+            "upper": all(_clean_title(rows[i].text).isupper() for i in headings),
+            "rule": rule_below,
+            "rule_width": round(rule_w, 2),
+            "gap_to_rule": round(
+                statistics.median(
+                    [
+                        min(
+                            (
+                                rule["y"] - h.y1
+                                for rule in rules
+                                if rule["page"] == h.page and 0 <= rule["y"] - h.y1 <= 14
+                            ),
+                            default=3,
+                        )
+                        for h in heading_rows
+                    ]
+                ),
+                1,
+            ),
+        },
         "bullet": {
             "char": _mode_str([getattr(r, "bullet_char", "•") for r in bullets], "•"),
             "size": _mode([getattr(r, "bullet_size", body_size) for r in bullets], body_size),
             "indent": round(_mode([getattr(r, "bullet_x0", left_margin) - left_margin for r in bullets], 10), 1),
             "text_indent": round(_mode([r.text_x0 - left_margin for r in bullets], 18), 1),
-        } if bullets else None,
+        }
+        if bullets
+        else None,
         "header": _header(header_rows, page.width, left_margin),
         "section_order": [s["title"] for s in sections],
         "text_selectable": not info["ocr"],
         "ocr": info["ocr"],
     }
-    positions = [{"title": _clean_title(rows[i].text), "page": rows[i].page, "y": round(rows[i].y0, 1)}
-                 for i in headings]
-    return {"fingerprint": fp, "sections": sections, "heading_positions": positions,
-            "header_rows": [_row_dict(r) for r in header_rows], "name": fp["name"]["text"],
-            "text": "\n".join(p.get_text() for p in doc)}
+    positions = [
+        {"title": _clean_title(rows[i].text), "page": rows[i].page, "y": round(rows[i].y0, 1)} for i in headings
+    ]
+    return {
+        "fingerprint": fp,
+        "sections": sections,
+        "heading_positions": positions,
+        "header_rows": [_row_dict(r) for r in header_rows],
+        "name": fp["name"]["text"],
+        "text": "\n".join(p.get_text() for p in doc),
+    }
 
 
 def _mode_str(values: list[str], default: str) -> str:
@@ -315,13 +374,36 @@ def _font_family(rows: list[Row]) -> dict:
     base = statistics.mode([re.sub(r"^[A-Z]{6}\+", "", n) for n in names]) if names else ""
     low = base.lower()
     family = "cm"
-    for key, fam in (("cmr", "cm"), ("cmbx", "cm"), ("lmroman", "cm"), ("lmsans", "lmsans"), ("times", "times"),
-                     ("nimbusrom", "times"), ("termes", "times"), ("helvetica", "helvet"), ("arial", "helvet"),
-                     ("nimbussan", "helvet"), ("liberationsans", "helvet"), ("calibri", "carlito"),
-                     ("carlito", "carlito"), ("cambria", "caladea"), ("garamond", "garamond"), ("palatino", "palatino"),
-                     ("pagella", "palatino"), ("palladio", "palatino"), ("charter", "charter"), ("roboto", "roboto"),
-                     ("lato", "lato"), ("opensans", "opensans"), ("sourcesans", "sourcesans"), ("fira", "fira"),
-                     ("georgia", "times"), ("verdana", "helvet"), ("tahoma", "helvet"), ("segoe", "helvet")):
+    for key, fam in (
+        ("cmr", "cm"),
+        ("cmbx", "cm"),
+        ("lmroman", "cm"),
+        ("lmsans", "lmsans"),
+        ("times", "times"),
+        ("nimbusrom", "times"),
+        ("termes", "times"),
+        ("helvetica", "helvet"),
+        ("arial", "helvet"),
+        ("nimbussan", "helvet"),
+        ("liberationsans", "helvet"),
+        ("calibri", "carlito"),
+        ("carlito", "carlito"),
+        ("cambria", "caladea"),
+        ("garamond", "garamond"),
+        ("palatino", "palatino"),
+        ("pagella", "palatino"),
+        ("palladio", "palatino"),
+        ("charter", "charter"),
+        ("roboto", "roboto"),
+        ("lato", "lato"),
+        ("opensans", "opensans"),
+        ("sourcesans", "sourcesans"),
+        ("fira", "fira"),
+        ("georgia", "times"),
+        ("verdana", "helvet"),
+        ("tahoma", "helvet"),
+        ("segoe", "helvet"),
+    ):
         if key in low.replace(" ", "").replace("-", ""):
             family = fam
             break
@@ -339,9 +421,14 @@ def _header(rows: list[Row], width: float, left: float) -> dict:
             items.append(s.text)
     links = [u for r in rows for u in r.link_urls]
     seps = [c for r in rows for s in r.segs for c in s.text if c in "|•·◦"]
-    return {"align": _align(rows[0], width, left) if rows else "center", "items": items, "links": links,
-            "icons": any(s.icon for r in rows for s in r.segs), "separator": seps[0] if seps else "",
-            "size": _mode([s.size for r in rows for s in r.segs if not s.icon], 10)}
+    return {
+        "align": _align(rows[0], width, left) if rows else "center",
+        "items": items,
+        "links": links,
+        "icons": any(s.icon for r in rows for s in r.segs),
+        "separator": seps[0] if seps else "",
+        "size": _mode([s.size for r in rows for s in r.segs if not s.icon], 10),
+    }
 
 
 def _section(title: str, rows: list[Row], left: float, right: float, body: float) -> dict:
@@ -356,8 +443,12 @@ def _section(title: str, rows: list[Row], left: float, right: float, body: float
             target = entries[-1]["bullets"] if entries else items
             target.append(r.text)
             continue
-        if (items or (entries and entries[-1]["bullets"])) and not r.segs[0].bold and \
-                r.text_x0 > left + 4 and not _right_part(r, right):
+        if (
+            (items or (entries and entries[-1]["bullets"]))
+            and not r.segs[0].bold
+            and r.text_x0 > left + 4
+            and not _right_part(r, right)
+        ):
             # continuation of the previous bullet
             if entries and entries[-1]["bullets"]:
                 entries[-1]["bullets"][-1] += " " + r.text
@@ -367,15 +458,24 @@ def _section(title: str, rows: list[Row], left: float, right: float, body: float
         m = re.match(r"^([^:]{2,40}):\s*(.+)$", r.text)
         if r.segs[0].bold and m and (kind == "skills" or r.segs[0].text.rstrip().endswith(":")):
             skills_indent = max(0.0, r.text_x0 - left)
-            skills.append({"name": m.group(1).strip(), "items": [x.strip() for x in re.split(r",\s*", m.group(2))
-                                                                 if x.strip()]})
+            skills.append(
+                {"name": m.group(1).strip(), "items": [x.strip() for x in re.split(r",\s*", m.group(2)) if x.strip()]}
+            )
             continue
         right_txt = _right_part(r, right)
         left_txt = r.segs[0].text if right_txt else r.text
         if r.segs[0].bold and kind != "summary":
-            e = {"primary": left_txt, "dates": right_txt, "secondary": "", "location": "", "bullets": [],
-                 "url": r.link_urls[0] if r.link_urls else "", "icon": any(s.icon for s in r.segs),
-                 "primary_italic": r.segs[0].italic, "right_bold": bool(right_txt) and r.segs[-1].bold}
+            e = {
+                "primary": left_txt,
+                "dates": right_txt,
+                "secondary": "",
+                "location": "",
+                "bullets": [],
+                "url": r.link_urls[0] if r.link_urls else "",
+                "icon": any(s.icon for s in r.segs),
+                "primary_italic": r.segs[0].italic,
+                "right_bold": bool(right_txt) and r.segs[-1].bold,
+            }
             entries.append(e)
             continue
         if entries and not entries[-1]["bullets"] and not entries[-1]["secondary"] and (r.segs[0].italic or right_txt):
@@ -402,8 +502,16 @@ def _section(title: str, rows: list[Row], left: float, right: float, body: float
                 e["grade"] = g.group(1)
         if not DATE_RX.search(e["dates"] or "") and e["dates"] and not e["location"]:
             pass
-    return {"title": title, "kind": kind, "layout": layout, "entries": entries, "items": items, "skills": skills,
-            "paragraph": " ".join(paragraph), "skills_indent": round(skills_indent, 1)}
+    return {
+        "title": title,
+        "kind": kind,
+        "layout": layout,
+        "entries": entries,
+        "items": items,
+        "skills": skills,
+        "paragraph": " ".join(paragraph),
+        "skills_indent": round(skills_indent, 1),
+    }
 
 
 def _right_part(r: Row, right: float) -> str:
@@ -416,16 +524,28 @@ def _right_part(r: Row, right: float) -> str:
 # --- reconstruction -------------------------------------------------------------------------------
 
 FONT_PACKAGES = {
-    "cm": "", "lmsans": "\\renewcommand{\\familydefault}{\\sfdefault}\n",
-    "times": "\\usepackage{mathptmx}\n", "helvet": "\\usepackage[scaled]{helvet}\n\\renewcommand{\\familydefault}{\\sfdefault}\n",
-    "carlito": "\\usepackage[sfdefault]{carlito}\n", "caladea": "\\usepackage{caladea}\n",
-    "garamond": "\\usepackage{ebgaramond}\n", "palatino": "\\usepackage{mathpazo}\n", "charter": "\\usepackage{XCharter}\n",
-    "roboto": "\\usepackage[sfdefault]{roboto}\n", "lato": "\\usepackage[default]{lato}\n",
-    "opensans": "\\usepackage[default]{opensans}\n", "sourcesans": "\\usepackage[default]{sourcesanspro}\n",
+    "cm": "",
+    "lmsans": "\\renewcommand{\\familydefault}{\\sfdefault}\n",
+    "times": "\\usepackage{mathptmx}\n",
+    "helvet": "\\usepackage[scaled]{helvet}\n\\renewcommand{\\familydefault}{\\sfdefault}\n",
+    "carlito": "\\usepackage[sfdefault]{carlito}\n",
+    "caladea": "\\usepackage{caladea}\n",
+    "garamond": "\\usepackage{ebgaramond}\n",
+    "palatino": "\\usepackage{mathpazo}\n",
+    "charter": "\\usepackage{XCharter}\n",
+    "roboto": "\\usepackage[sfdefault]{roboto}\n",
+    "lato": "\\usepackage[default]{lato}\n",
+    "opensans": "\\usepackage[default]{opensans}\n",
+    "sourcesans": "\\usepackage[default]{sourcesanspro}\n",
     "fira": "\\usepackage[sfdefault]{FiraSans}\n",
 }
-ICON_FOR = {"email": "\\faEnvelope", "phone": "\\faPhone", "linkedin": "\\faLinkedin", "github": "\\faGithub",
-            "portfolio": "\\faGlobe"}
+ICON_FOR = {
+    "email": "\\faEnvelope",
+    "phone": "\\faPhone",
+    "linkedin": "\\faLinkedin",
+    "github": "\\faGithub",
+    "portfolio": "\\faGlobe",
+}
 
 
 def _pt(v: float) -> str:
@@ -442,8 +562,11 @@ def build_latex(a: dict, spacing: dict | None = None) -> str:
     h = fp["heading"]
     b = fp["bullet"] or {"char": "•", "size": body["size"], "indent": 10, "text_indent": 18}
     bullet_label = "$\\bullet$" if b["char"] in "•●" else ("--" if b["char"] in "–-" else escape(b["char"]))
-    heading_style = ("\\bfseries" if h["bold"] else "") + ("\\scshape" if h["caps"] else "") + (
-        "\\MakeUppercase" if h["upper"] and not h["caps"] else "")
+    heading_style = (
+        ("\\bfseries" if h["bold"] else "")
+        + ("\\scshape" if h["caps"] else "")
+        + ("\\MakeUppercase" if h["upper"] and not h["caps"] else "")
+    )
     rule = f"[{{\\vspace{{{_pt(h['gap_to_rule'] - 1.5)}}}\\titlerule[{h['rule_width']}pt]}}]" if h["rule"] else ""
     lines = [
         "% Rebuilt from an uploaded PDF by CareerPilot. Layout definitions are locked; only content is tailored.",
@@ -457,8 +580,9 @@ def build_latex(a: dict, spacing: dict | None = None) -> str:
         "\\usepackage{enumitem}",
         "\\usepackage[hidelinks]{hyperref}",
         "\\usepackage{tabularx}",
-        "\\usepackage{fontawesome5}" if fp["header"]["icons"] or any(e.get("icon") for s in a["sections"]
-                                                                    for e in s["entries"]) else "",
+        "\\usepackage{fontawesome5}"
+        if fp["header"]["icons"] or any(e.get("icon") for s in a["sections"] for e in s["entries"])
+        else "",
         "\\pagestyle{empty}",
         "\\setlength{\\parindent}{0pt}",
         "\\setlength{\\tabcolsep}{0pt}",
@@ -519,8 +643,11 @@ def _header_tex(a: dict) -> list[str]:
     name = fp["name"]
     style = ("\\bfseries" if name["bold"] else "") + ("\\scshape" if name["caps"] else "")
     env = "center" if name["align"] == "center" else "flushleft"
-    out = [f"\\begin{{{env}}}", f"{{\\fontsize{{{name['size']}}}{{{name['size'] * 1.2:.1f}}}\\selectfont{style} "
-           f"{escape(name['text'])}}}\\\\[3pt]"]
+    out = [
+        f"\\begin{{{env}}}",
+        f"{{\\fontsize{{{name['size']}}}{{{name['size'] * 1.2:.1f}}}\\selectfont{style} "
+        f"{escape(name['text'])}}}\\\\[3pt]",
+    ]
     parts = []
     used_links = set()
     rows = a.get("header_rows", [])
@@ -535,16 +662,22 @@ def _header_tex(a: dict) -> list[str]:
         if text in ("|", "•", "·"):
             continue
         url = next((u for u in links if u not in used_links and (_matches(text, u))), "")
-        kind = _link_kind(url) if url else ("email" if "@" in text else "phone" if re.fullmatch(r"[+\d\s()-]{8,}", text)
-                                           else "")
+        kind = (
+            _link_kind(url)
+            if url
+            else ("email" if "@" in text else "phone" if re.fullmatch(r"[+\d\s()-]{8,}", text) else "")
+        )
         icon = (ICON_FOR.get(kind, "") + "\\ ") if hdr["icons"] and kind else ""
         if url:
             used_links.add(url)
             parts.append(f"\\href{{{escape_url(url)}}}{{{icon}\\underline{{{escape(text)}}}}}")
         else:
             parts.append(f"{icon}{escape(text)}")
-    sep = f" {escape(hdr['separator'])} " if hdr["separator"] and hdr["separator"] != "|" else (
-        " $|$ " if hdr["separator"] == "|" else " \\quad ")
+    sep = (
+        f" {escape(hdr['separator'])} "
+        if hdr["separator"] and hdr["separator"] != "|"
+        else (" $|$ " if hdr["separator"] == "|" else " \\quad ")
+    )
     out.append(f"{{\\fontsize{{{hdr['size']}}}{{{hdr['size'] * 1.25:.1f}}}\\selectfont " + sep.join(parts) + "}")
     out.append(f"\\end{{{env}}}")
     out.append("\\vspace{-8pt}")
@@ -567,10 +700,13 @@ def _section_tex(s: dict) -> list[str]:
     if s["layout"] == "paragraph":
         out.append(escape(s["paragraph"]))
     elif s["layout"] == "skills":
-        out.append(f"\\begin{{itemize}}[leftmargin={_pt(s.get('skills_indent', 0))},label={{}},topsep=0pt,itemsep=0pt,"
-                   "parsep=0pt]\\item{")
-        out.append(" \\\\\n".join(f"\\textbf{{{escape(c['name'])}}}{{: {escape(', '.join(c['items']))}}}"
-                                  for c in s["skills"]))
+        out.append(
+            f"\\begin{{itemize}}[leftmargin={_pt(s.get('skills_indent', 0))},label={{}},topsep=0pt,itemsep=0pt,"
+            "parsep=0pt]\\item{"
+        )
+        out.append(
+            " \\\\\n".join(f"\\textbf{{{escape(c['name'])}}}{{: {escape(', '.join(c['items']))}}}" for c in s["skills"])
+        )
         out.append("}\\end{itemize}")
     elif s["layout"] == "items":
         out.append("\\resumeItemListStart")
@@ -588,8 +724,10 @@ def _section_tex(s: dict) -> list[str]:
                     title = f"\\textbf{{{escape(e['primary'])}}}"
                 out.append(f"  \\resumeProjectHeading{{{title}}}{{{escape(e['dates'])}}}")
             else:
-                out.append(f"  \\resumeSubheading{{{escape(e['primary'])}}}{{{escape(e['dates'])}}}"
-                           f"{{{escape(e['secondary'])}}}{{{escape(e['location'])}}}")
+                out.append(
+                    f"  \\resumeSubheading{{{escape(e['primary'])}}}{{{escape(e['dates'])}}}"
+                    f"{{{escape(e['secondary'])}}}{{{escape(e['location'])}}}"
+                )
             if e["bullets"]:
                 out.append("  \\resumeItemListStart")
                 out += [f"    \\resumeItem{{{escape(t)}}}" for t in e["bullets"]]
@@ -599,6 +737,7 @@ def _section_tex(s: dict) -> list[str]:
 
 
 # --- comparison & calibration ----------------------------------------------------------------------
+
 
 def heading_positions(pdf: bytes, titles: list[str]) -> list[dict]:
     doc = pymupdf.open(stream=pdf, filetype="pdf")
@@ -631,8 +770,10 @@ def compare(original: dict, pdf: bytes) -> dict:
 
     text_match = difflib.SequenceMatcher(None, words_o, words_g, autojunk=False).ratio() if words_o else 0
     return {
-        "pages_original": fp["page"]["count"], "pages_rebuilt": len(doc),
-        "headings_found": len(pos), "headings_total": len(original["heading_positions"]),
+        "pages_original": fp["page"]["count"],
+        "pages_rebuilt": len(doc),
+        "headings_found": len(pos),
+        "headings_total": len(original["heading_positions"]),
         "max_heading_offset_pt": round(max(diffs), 1) if diffs else None,
         "mean_heading_offset_pt": round(sum(diffs) / len(diffs), 1) if diffs else None,
         "text_preserved": round(text_match * 100, 1),

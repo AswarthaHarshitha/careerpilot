@@ -64,3 +64,6 @@ ignore = ["S101", "B008", "S311"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S108", "S603", "S607"]
 "migrations/**" = ["E501"]
+# Embedded page scripts/HTML, and best-effort probes of third-party pages that must not abort a run
+"app/automation/**" = ["E501", "S110", "S112", "SIM105"]
+"tests/support/**" = ["E501"]

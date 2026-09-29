@@ -10,9 +10,9 @@ import re
 
 from app.resume.latex_syntax import escape, escape_url
 
-PREAMBLE = r"""%-----------------------------------------------------------------------------------------------------------------------------------------------%
+PREAMBLE = r"""%--------------------------------------------------------------------------------------------------%
 %   Standard CareerPilot layout (based on an MIT-licensed resume template)
-%-----------------------------------------------------------------------------------------------------------------------------------------------%
+%--------------------------------------------------------------------------------------------------%
 \documentclass[a4paper,10pt]{article}
 \usepackage{url}
 \usepackage{parskip}
@@ -38,16 +38,22 @@ PREAMBLE = r"""%----------------------------------------------------------------
 \pagestyle{empty}
 """
 
-ICONS = {"github": r"\faGithub", "linkedin": r"\faLinkedin", "email": r"\faEnvelope", "phone": r"\faMobile",
-         "portfolio": r"\faGlobe"}
+ICONS = {
+    "github": r"\faGithub",
+    "linkedin": r"\faLinkedin",
+    "email": r"\faEnvelope",
+    "phone": r"\faMobile",
+    "portfolio": r"\faGlobe",
+}
 
 
 def _link(kind: str, url: str, text: str) -> str:
     return rf"\href{{{escape_url(url)}}}{{\raisebox{{-0.05\height}}{ICONS[kind]}\ {escape(text)}}}"
 
 
-def _entry(title: str, right: str, secondary: str, location: str, bullets: list[str], tech: list[str],
-           link: str = "") -> str:
+def _entry(
+    title: str, right: str, secondary: str, location: str, bullets: list[str], tech: list[str], link: str = ""
+) -> str:
     right_cell = rf"\hfill \href{{{escape_url(link)}}}{{\textit{{GitHub}}}}" if link else rf"\hfill {escape(right)}"
     rows = [r"\begin{tabularx}{\linewidth}{ @{}l r@{} }", rf"\textbf{{{escape(title)}}} & {right_cell} \\[-2pt]"]
     if secondary or location:
@@ -58,19 +64,35 @@ def _entry(title: str, right: str, secondary: str, location: str, bullets: list[
         items.append(rf"    \item \textbf{{Technologies:}} {escape(', '.join(tech))}.")
     if not items:
         items = [rf"    \item {escape(title)}"]
-    rows += [r"\multicolumn{2}{@{}X@{}}{",
-             r"\begin{itemize}[leftmargin=1em,itemsep=1pt,topsep=1pt,parsep=0pt]", *items, r"\end{itemize}", "}",
-             r"\end{tabularx}"]
+    rows += [
+        r"\multicolumn{2}{@{}X@{}}{",
+        r"\begin{itemize}[leftmargin=1em,itemsep=1pt,topsep=1pt,parsep=0pt]",
+        *items,
+        r"\end{itemize}",
+        "}",
+        r"\end{tabularx}",
+    ]
     return "\n".join(rows)
 
 
-def build(profile: dict, experiences: list[dict], projects: list[dict], skills: dict[str, list[str]],
-          educations: list[dict], certifications: list[str], achievements: list[str]) -> str:
+def build(
+    profile: dict,
+    experiences: list[dict],
+    projects: list[dict],
+    skills: dict[str, list[str]],
+    educations: list[dict],
+    certifications: list[str],
+    achievements: list[str],
+) -> str:
     out = [PREAMBLE]
     links = []
-    for kind, key, label in (("github", "github_url", None), ("linkedin", "linkedin_url", None),
-                             ("email", "email", None), ("phone", "phone", None), ("portfolio", "portfolio_url",
-                                                                                   "Portfolio")):
+    for kind, key, label in (
+        ("github", "github_url", None),
+        ("linkedin", "linkedin_url", None),
+        ("email", "email", None),
+        ("phone", "phone", None),
+        ("portfolio", "portfolio_url", "Portfolio"),
+    ):
         val = (profile.get(key) or "").strip()
         if not val:
             continue
@@ -89,14 +111,24 @@ def build(profile: dict, experiences: list[dict], projects: list[dict], skills: 
         out += [r"\section{Summary}", escape(profile["summary"]), r"\vspace{-5pt}"]
     if experiences:
         out.append(r"\section{Work Experience}")
-        blocks = [_entry(e["organization"], e.get("dates", ""), e.get("title", ""), e.get("location", ""),
-                         e.get("bullets", []), e.get("tech", [])) for e in experiences]
+        blocks = [
+            _entry(
+                e["organization"],
+                e.get("dates", ""),
+                e.get("title", ""),
+                e.get("location", ""),
+                e.get("bullets", []),
+                e.get("tech", []),
+            )
+            for e in experiences
+        ]
         out.append("\n\n\\vspace{-16pt}\n\n".join(blocks))
         out.append(r"\vspace{-15pt}")
     if projects:
         out.append(r"\section{Projects}")
-        blocks = [_entry(p["title"], "", "", "", p.get("bullets", []), p.get("tech", []), p.get("url", ""))
-                  for p in projects]
+        blocks = [
+            _entry(p["title"], "", "", "", p.get("bullets", []), p.get("tech", []), p.get("url", "")) for p in projects
+        ]
         out.append("\n\\vspace{-12pt}\n\n".join(blocks))
         out.append(r"\vspace{-12pt}")
     if skills:
@@ -115,8 +147,11 @@ def build(profile: dict, experiences: list[dict], projects: list[dict], skills: 
         out.append(r"\end{tabularx}")
     extra = certifications + achievements
     if extra:
-        title = "Certifications \\& Achievements" if certifications and achievements else (
-            "Certifications" if certifications else "Achievements")
+        title = (
+            "Certifications \\& Achievements"
+            if certifications and achievements
+            else ("Certifications" if certifications else "Achievements")
+        )
         out.append(rf"\section{{{title}}}")
         out.append(r"\begin{itemize}[nosep,leftmargin=1em,itemsep=0pt,topsep=0pt]")
         out += [rf"    \item {escape(x)}" for x in extra]

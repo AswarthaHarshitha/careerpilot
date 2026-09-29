@@ -24,10 +24,13 @@ EMPHASIS_AREAS = {
     "systems": ("concept", "language"),
 }
 DEFAULT_CONTROLS = {
-    "portfolio": "default", "github": "default", "linkedin": "default",
+    "portfolio": "default",
+    "github": "default",
+    "linkedin": "default",
     "length": "default",  # default | 1 | 2
     "projects": "auto",  # auto | 2 | 3 | 4
-    "summary": "auto", "certifications": "auto",
+    "summary": "auto",
+    "certifications": "auto",
     "template_id": None,
 }
 
@@ -56,8 +59,12 @@ FABRICATION = re.compile(
 
 
 def split_lines(text: str) -> list[str]:
-    parts = re.split(r"\n+|(?<=[.;])\s+(?=[A-Z])|,\s*(?:and\s+)?(?=(?:include|exclude|keep|put|remove|use|add|drop|"
-                     r"make|emphasi[sz]e|focus|do not|don't|no)\b)", text or "", flags=re.I)
+    parts = re.split(
+        r"\n+|(?<=[.;])\s+(?=[A-Z])|,\s*(?:and\s+)?(?=(?:include|exclude|keep|put|remove|use|add|drop|"
+        r"make|emphasi[sz]e|focus|do not|don't|no)\b)",
+        text or "",
+        flags=re.I,
+    )
     return [p.strip(" -•*\t.,") for p in parts if p and p.strip(" -•*\t.,")]
 
 
@@ -71,35 +78,53 @@ def parse(lines: list[str], project_names: list[str]) -> Interpretation:
         understood = False
 
         if FABRICATION.search(line) and not re.search(r"\b(emphasi[sz]e|highlight|focus|prominent|order|first)\b", low):
-            out.conflicts.append({
-                "instruction": line,
-                "reason": "This asks the resume to state something as fact. CareerPilot only states what your "
-                          "verified evidence or your profile supports.",
-                "options": ["Add verified experience to your profile", "Keep it as a skill only if your evidence "
-                            "supports it", "Create a supporting project"],
-            })
+            out.conflicts.append(
+                {
+                    "instruction": line,
+                    "reason": "This asks the resume to state something as fact. CareerPilot only states what your "
+                    "verified evidence or your profile supports.",
+                    "options": [
+                        "Add verified experience to your profile",
+                        "Keep it as a skill only if your evidence supports it",
+                        "Create a supporting project",
+                    ],
+                }
+            )
             continue
 
-        for link, words in (("portfolio", r"portfolio|personal (?:web)?site|website"), ("github", r"git ?hub"),
-                            ("linkedin", r"linked ?in")):
-            if re.search(rf"\b({words})\b", low) and re.search(r"\b(link|url|header|top|contact|profile)\b|"
-                                                              rf"{_NEG}|include|add|keep|show", low):
-                neg = re.search(rf"{_NEG}\b[^.]*\b({words})", low) or re.search(rf"\b({words})\b[^.]*\b(removed|out)\b",
-                                                                              low)
+        for link, words in (
+            ("portfolio", r"portfolio|personal (?:web)?site|website"),
+            ("github", r"git ?hub"),
+            ("linkedin", r"linked ?in"),
+        ):
+            if re.search(rf"\b({words})\b", low) and re.search(
+                r"\b(link|url|header|top|contact|profile)\b|"
+                rf"{_NEG}|include|add|keep|show",
+                low,
+            ):
+                neg = re.search(rf"{_NEG}\b[^.]*\b({words})", low) or re.search(
+                    rf"\b({words})\b[^.]*\b(removed|out)\b", low
+                )
                 out.controls[link] = "exclude" if neg else "include"
                 out.applied.append(f"{link.capitalize()} link: {'exclude' if neg else 'include'}")
                 understood = True
 
-        m = re.search(r"\b(exactly |only |keep (?:it |the resume )?(?:to |at |within )?|max(?:imum)? |fit (?:in|on|to) )?"
-                      r"(one|two|1|2)[\s-]pages?\b", low)
+        m = re.search(
+            r"\b(exactly |only |keep (?:it |the resume )?(?:to |at |within )?|max(?:imum)? |fit (?:in|on|to) )?"
+            r"(one|two|1|2)[\s-]pages?\b",
+            low,
+        )
         if m:
             n = _NUM[m.group(2)]
             out.controls["length"] = n
             out.applied.append(f"Length: {n} page{'s' if n > 1 else ''}")
             understood = True
 
-        m = re.search(r"\b(?:use |include |show |keep |only |limit to |max(?:imum)? (?:of )?)?(two|three|four|2|3|4)\s+"
-                      r"projects?\b", low)
+        m = re.search(
+            r"\b(?:use |include |show |keep |only |limit to |max(?:imum)? (?:of )?)?(two|three|four|2|3|4)\s+"
+            r"projects?\b",
+            low,
+        )
         if m:
             n = _NUM[m.group(1)]
             out.controls["projects"] = n
@@ -113,8 +138,9 @@ def parse(lines: list[str], project_names: list[str]) -> Interpretation:
                     out.controls[section] = "exclude"
                     out.applied.append(f"{section.capitalize()}: exclude")
                     understood = True
-                elif section == "summary" and re.search(r"\boriginal\b|\bsame\b|\bunchanged\b|\bdon'?t (?:change|rewrite)",
-                                                         low):
+                elif section == "summary" and re.search(
+                    r"\boriginal\b|\bsame\b|\bunchanged\b|\bdon'?t (?:change|rewrite)", low
+                ):
                     out.flags.add("keep_original_summary")
                     out.applied.append("Summary: keep your original wording")
                     understood = True
@@ -142,23 +168,36 @@ def parse(lines: list[str], project_names: list[str]) -> Interpretation:
             out.ambiguous.append(line)
 
         for area, _ in EMPHASIS_AREAS.items():
-            words = {"backend": r"back[\s-]?end|server[\s-]side|api", "frontend": r"front[\s-]?end|ui|react",
-                     "ml": r"\bml\b|machine learning|\bai\b|deep learning", "data": r"\bdata\b|analytics",
-                     "cloud": r"cloud|devops|deployment", "testing": r"testing|\bqa\b",
-                     "systems": r"systems|low[\s-]level"}[area]
-            if re.search(words, low) and re.search(r"emphasi[sz]|focus|prominent|highlight|stress|more|less|"
-                                                   r"de-?emphasi|don'?t|do not", low):
+            words = {
+                "backend": r"back[\s-]?end|server[\s-]side|api",
+                "frontend": r"front[\s-]?end|ui|react",
+                "ml": r"\bml\b|machine learning|\bai\b|deep learning",
+                "data": r"\bdata\b|analytics",
+                "cloud": r"cloud|devops|deployment",
+                "testing": r"testing|\bqa\b",
+                "systems": r"systems|low[\s-]level",
+            }[area]
+            if re.search(words, low) and re.search(
+                r"emphasi[sz]|focus|prominent|highlight|stress|more|less|"
+                r"de-?emphasi|don'?t|do not",
+                low,
+            ):
                 neg = re.search(rf"(don'?t|do not|less|de-?emphasi[sz]e|avoid|minimi[sz]e)\b[^.]*({words})", low)
                 out.emphasis[area] = -1.0 if neg else 1.0
                 out.applied.append(f"{'De-emphasize' if neg else 'Emphasize'} {area}")
                 understood = True
 
-        if re.search(r"(don'?t|do not|avoid|no)\b[^.]*\b(technolog\w*|skills?|tools?)\b[^.]*\b(not|aren'?t|irrelevant|"
-                     r"unrelated|relevant)", low) or re.search(r"only (?:relevant|related) (?:skills|technolog)", low):
+        if re.search(
+            r"(don'?t|do not|avoid|no)\b[^.]*\b(technolog\w*|skills?|tools?)\b[^.]*\b(not|aren'?t|irrelevant|"
+            r"unrelated|relevant)",
+            low,
+        ) or re.search(r"only (?:relevant|related) (?:skills|technolog)", low):
             out.flags.add("relevant_skills_only")
             out.applied.append("Skills: only those relevant to this job")
             understood = True
-        m = re.search(r"same (?:project )?order(?:ing)? as (?:in )?(?:my )?(?:previous|last|earlier|old) (.+?) resume", low)
+        m = re.search(
+            r"same (?:project )?order(?:ing)? as (?:in )?(?:my )?(?:previous|last|earlier|old) (.+?) resume", low
+        )
         if m:
             out.reuse_order_from = m.group(1).strip()
             out.applied.append(f"Project order: same as your previous {m.group(1).strip()} resume")
@@ -171,7 +210,10 @@ def parse(lines: list[str], project_names: list[str]) -> Interpretation:
             out.flags.add("template_locked")
             out.applied.append("Template: exactly as is")
             understood = True
-        if re.search(r"bullets?\b[^.]*\b(backend|technical)[\s-]?(focused|heavy)?", low) and "backend" not in out.emphasis:
+        if (
+            re.search(r"bullets?\b[^.]*\b(backend|technical)[\s-]?(focused|heavy)?", low)
+            and "backend" not in out.emphasis
+        ):
             out.emphasis["backend"] = 1.0
             out.applied.append("Emphasize backend")
             understood = True
@@ -192,13 +234,16 @@ def merge(controls: dict, custom: list[str], project_names: list[str]) -> tuple[
     return merged, interp
 
 
-def effective_config(job_instructions: dict, settings, template_pages: int | None, project_names: list[str],
-                     template_name: str = "") -> dict:
+def effective_config(
+    job_instructions: dict, settings, template_pages: int | None, project_names: list[str], template_name: str = ""
+) -> dict:
     ji = job_instructions or {}
     controls, interp = merge(ji.get("controls") or {}, ji.get("custom") or [], project_names)
-    master = {"portfolio": getattr(settings, "header_portfolio", "template"),
-              "github": getattr(settings, "header_github", "template"),
-              "linkedin": getattr(settings, "header_linkedin", "template")}
+    master = {
+        "portfolio": getattr(settings, "header_portfolio", "template"),
+        "github": getattr(settings, "header_github", "template"),
+        "linkedin": getattr(settings, "header_linkedin", "template"),
+    }
     links = {}
     for k in ("portfolio", "github", "linkedin"):
         v = controls[k]
@@ -244,12 +289,19 @@ def summary_lines(cfg: dict) -> list[str]:
         if cfg[s] != "auto":
             lines.append(f"{'Include' if cfg[s] == 'include' else 'Remove'} {s}")
     if cfg["project_priority"]:
-        lines.append("Put " + " before ".join(cfg["project_priority"]) + (" first" if len(cfg["project_priority"]) == 1
-                                                                        else ""))
+        lines.append(
+            "Put " + " before ".join(cfg["project_priority"]) + (" first" if len(cfg["project_priority"]) == 1 else "")
+        )
     for area, w in cfg["emphasis"].items():
         lines.append(f"{'Emphasize' if w > 0 else 'De-emphasize'} {area}")
     for f in cfg["flags"]:
-        lines.append({"keep_original_summary": "Keep the original summary", "relevant_skills_only":
-                      "Only job-relevant skills", "keep_education": "Education unchanged", "concise_summary":
-                      "Concise summary", "template_locked": "Template exactly as is"}.get(f, f))
+        lines.append(
+            {
+                "keep_original_summary": "Keep the original summary",
+                "relevant_skills_only": "Only job-relevant skills",
+                "keep_education": "Education unchanged",
+                "concise_summary": "Concise summary",
+                "template_locked": "Template exactly as is",
+            }.get(f, f)
+        )
     return list(dict.fromkeys(lines))

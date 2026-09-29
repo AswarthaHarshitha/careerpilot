@@ -1,4 +1,4 @@
-"""Live resume editor: targeted operations, assistant scope, undo/redo, history, conflicts, export of the latest state."""
+"""Live resume editor: targeted operations, assistant scope, undo/redo, history, conflicts and export."""
 
 import pytest
 
@@ -14,11 +14,20 @@ def generated(auth_client):
     c = auth_client
     tpl = upload_template(c)
     c.post(f"/api/templates/{tpl['id']}/import-profile")
-    c.put("/api/profile", json={**c.get("/api/profile").json()["personal"],
-                                "portfolio_url": "https://candidate.example.dev"})
+    c.put(
+        "/api/profile",
+        json={**c.get("/api/profile").json()["personal"], "portfolio_url": "https://candidate.example.dev"},
+    )
     add_github_project()
-    r = c.post("/api/jobs", json={"description": SAMPLE_JD, "company": "Acme", "role_title": "Backend Engineer",
-                                  "resume_instructions": {"controls": {"portfolio": "include"}, "custom": []}})
+    r = c.post(
+        "/api/jobs",
+        json={
+            "description": SAMPLE_JD,
+            "company": "Acme",
+            "role_title": "Backend Engineer",
+            "resume_instructions": {"controls": {"portfolio": "include"}, "custom": []},
+        },
+    )
     run_tasks()
     job_id = r.json()["job"]["id"]
     # keep the template's two projects too, so there is something to reorder
@@ -43,35 +52,48 @@ def test_editor_flow(generated):
 
     # 3-4. manual bullet edit appears in the rendered PDF
     bullet = next(k for k, e in s["elements"].items() if e["type"] == "bullet" and not e["tech_line"])
-    r = c.post(f"/api/resumes/{vid}/ops", json={"base_revision": 1, "ops": [
-        {"op": "update_text", "id": bullet, "text": "Built REST APIs with FastAPI for request intake."}]}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/ops",
+        json={
+            "base_revision": 1,
+            "ops": [{"op": "update_text", "id": bullet, "text": "Built REST APIs with FastAPI for request intake."}],
+        },
+    ).json()
     assert r["revision"] == 2 and "Built REST APIs with FastAPI for request intake." in _pdf(c, vid)
     assert r["elements"][bullet]["origin"] == "user"
 
     # 5-6. the assistant changes only the summary
     before = r["elements"]
-    r = c.post(f"/api/resumes/{vid}/assistant", json={"instruction": "Make the summary 1 line", "base_revision": 2,
-                                                      "apply": True}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/assistant",
+        json={"instruction": "Make the summary 1 line", "base_revision": 2, "apply": True},
+    ).json()
     assert r["applied"] and r["changed"] == ["summary.text"]
     after = r["state"]["elements"]
-    assert all(after[k]["text"] == v["text"] for k, v in before.items() if k in after and k != "summary.text"
-               and v["type"] in ("bullet", "paragraph", "item", "skills"))
+    assert all(
+        after[k]["text"] == v["text"]
+        for k, v in before.items()
+        if k in after and k != "summary.text" and v["type"] in ("bullet", "paragraph", "item", "skills")
+    )
 
     # 7. move a project
     projects = [k for k, e in after.items() if e["type"] == "entry" and k.startswith("projects.")]
     assert len(projects) >= 2
     last = projects[-1]
     name = after[last]["text"].split(" ")[0]
-    r = c.post(f"/api/resumes/{vid}/assistant", json={"instruction": f"Put {name} first",
-                                                      "base_revision": r["state"]["revision"]}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/assistant",
+        json={"instruction": f"Put {name} first", "base_revision": r["state"]["revision"]},
+    ).json()
     assert r["applied"], r
     order = [k for k, e in r["state"]["elements"].items() if e["type"] == "entry" and k.startswith("projects.")]
     assert order[0] == last
 
     # 8-10. remove a link, undo, redo
     rev = r["state"]["revision"]
-    r = c.post(f"/api/resumes/{vid}/assistant", json={"instruction": "Remove the portfolio link",
-                                                      "base_revision": rev}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/assistant", json={"instruction": "Remove the portfolio link", "base_revision": rev}
+    ).json()
     assert r["applied"] and "Portfolio" not in _pdf(c, vid)
     u = c.post(f"/api/resumes/{vid}/undo", json={"base_revision": r["state"]["revision"]}).json()
     assert "Portfolio" in _pdf(c, vid) and u["can_redo"]
@@ -79,17 +101,23 @@ def test_editor_flow(generated):
     assert "Portfolio" not in _pdf(c, vid)
 
     # the manual edit survives a broad "make projects concise" request (user edits are preserved)
-    r = c.post(f"/api/resumes/{vid}/assistant", json={"instruction": "Make the projects section more concise",
-                                                      "base_revision": rd["revision"], "apply": True}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/assistant",
+        json={"instruction": "Make the projects section more concise", "base_revision": rd["revision"], "apply": True},
+    ).json()
     state = r.get("state") or c.get(f"/api/resumes/{vid}/editor").json()
     assert state["elements"][bullet]["text"] == "Built REST APIs with FastAPI for request intake."
 
     # 11-12. one page, validated layout
-    r = c.post(f"/api/resumes/{vid}/assistant", json={"instruction": "Make the resume exactly one page",
-                                                      "base_revision": state["revision"]}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/assistant",
+        json={"instruction": "Make the resume exactly one page", "base_revision": state["revision"]},
+    ).json()
     assert not r["applied"] and r["broad"]  # broad change: previewed first
-    r = c.post(f"/api/resumes/{vid}/assistant", json={"instruction": "Make the resume exactly one page",
-                                                      "base_revision": state["revision"], "ops": r["ops"]}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/assistant",
+        json={"instruction": "Make the resume exactly one page", "base_revision": state["revision"], "ops": r["ops"]},
+    ).json()
     state = r["state"]
     assert state["page_count"] == 1
     checks = {x["id"]: x["status"] for x in state["quality_report"]["checks"]}
@@ -114,10 +142,14 @@ def test_editor_flow(generated):
 def test_stale_edits_are_refused(generated):
     c, vid = generated
     s = c.get(f"/api/resumes/{vid}/editor").json()
-    c.post(f"/api/resumes/{vid}/ops", json={"base_revision": s["revision"], "ops": [
-        {"op": "set_link", "kind": "portfolio", "mode": "exclude"}]})
-    stale = c.post(f"/api/resumes/{vid}/ops", json={"base_revision": s["revision"], "ops": [
-        {"op": "set_link", "kind": "portfolio", "mode": "include"}]})
+    c.post(
+        f"/api/resumes/{vid}/ops",
+        json={"base_revision": s["revision"], "ops": [{"op": "set_link", "kind": "portfolio", "mode": "exclude"}]},
+    )
+    stale = c.post(
+        f"/api/resumes/{vid}/ops",
+        json={"base_revision": s["revision"], "ops": [{"op": "set_link", "kind": "portfolio", "mode": "include"}]},
+    )
     assert stale.status_code == 409 and stale.json()["error"]["code"] == "revision_conflict"
 
 
@@ -125,8 +157,13 @@ def test_typed_claims_are_flagged_not_trusted(generated):
     c, vid = generated
     s = c.get(f"/api/resumes/{vid}/editor").json()
     bullet = next(k for k, e in s["elements"].items() if e["type"] == "bullet" and not e["tech_line"])
-    r = c.post(f"/api/resumes/{vid}/ops", json={"base_revision": s["revision"], "ops": [
-        {"op": "update_text", "id": bullet, "text": "Built APIs serving 500,000 users."}]}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/ops",
+        json={
+            "base_revision": s["revision"],
+            "ops": [{"op": "update_text", "id": bullet, "text": "Built APIs serving 500,000 users."}],
+        },
+    ).json()
     assert r["unverified_user_claims"]
     assert {x["id"]: x["status"] for x in r["quality_report"]["checks"]}["user_claims"] == "review"
 
@@ -134,6 +171,8 @@ def test_typed_claims_are_flagged_not_trusted(generated):
 def test_assistant_refuses_to_add_unevidenced_skills(generated):
     c, vid = generated
     s = c.get(f"/api/resumes/{vid}/editor").json()
-    r = c.post(f"/api/resumes/{vid}/assistant", json={"instruction": "Add Kubernetes to the skills",
-                                                      "base_revision": s["revision"]}).json()
+    r = c.post(
+        f"/api/resumes/{vid}/assistant",
+        json={"instruction": "Add Kubernetes to the skills", "base_revision": s["revision"]},
+    ).json()
     assert not r["applied"] and r["refused"]

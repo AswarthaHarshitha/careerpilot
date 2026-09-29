@@ -31,9 +31,18 @@ router = APIRouter(prefix="/api", tags=["projects"])
 
 
 def evidence_out(e: ProjectEvidence) -> dict:
-    return {"id": e.id, "kind": e.kind, "label": e.label, "canonical": e.canonical, "category": e.category,
-            "status": e.status, "source_type": e.source_type, "source_detail": e.source_detail, "snippet": e.snippet,
-            "user_reviewed": e.user_reviewed}
+    return {
+        "id": e.id,
+        "kind": e.kind,
+        "label": e.label,
+        "canonical": e.canonical,
+        "category": e.category,
+        "status": e.status,
+        "source_type": e.source_type,
+        "source_detail": e.source_detail,
+        "snippet": e.snippet,
+        "user_reviewed": e.user_reviewed,
+    }
 
 
 def project_out(p: Project, full: bool = False) -> dict:
@@ -41,35 +50,61 @@ def project_out(p: Project, full: bool = False) -> dict:
     for e in p.evidence:
         if e.canonical and e.kind in ("technology", "testing") and e.status in ("verified", "user_provided"):
             tech.setdefault(e.canonical, display_name(e.canonical))
-    counts = {s: sum(1 for e in p.evidence if e.status == s) for s in ("verified", "user_provided", "inferred",
-                                                                        "unsupported")}
+    counts = {
+        s: sum(1 for e in p.evidence if e.status == s) for s in ("verified", "user_provided", "inferred", "unsupported")
+    }
     deployment = next((e.label for e in p.evidence if e.kind == "deployment" and e.status != "unsupported"), "")
     out = {
-        "id": p.id, "name": p.name, "title": p.title, "display_name": p.display_name, "origin": p.origin,
-        "description": p.description, "repo_full_name": p.repo_full_name, "repo_url": p.repo_url,
-        "homepage_url": p.homepage_url or deployment, "is_private": p.is_private, "is_fork": p.is_fork,
-        "archived": p.archived, "primary_language": p.primary_language, "stars": p.stars, "hidden": p.hidden,
+        "id": p.id,
+        "name": p.name,
+        "title": p.title,
+        "display_name": p.display_name,
+        "origin": p.origin,
+        "description": p.description,
+        "repo_full_name": p.repo_full_name,
+        "repo_url": p.repo_url,
+        "homepage_url": p.homepage_url or deployment,
+        "is_private": p.is_private,
+        "is_fork": p.is_fork,
+        "archived": p.archived,
+        "primary_language": p.primary_language,
+        "stars": p.stars,
+        "hidden": p.hidden,
         "pushed_at": p.pushed_at.isoformat() if p.pushed_at else None,
-        "last_scanned_at": p.last_scanned_at.isoformat() if p.last_scanned_at else None, "scan_error": p.scan_error,
-        "technologies": list(tech.values())[:14], "evidence_counts": counts, "bullet_count": len(p.bullets),
+        "last_scanned_at": p.last_scanned_at.isoformat() if p.last_scanned_at else None,
+        "scan_error": p.scan_error,
+        "technologies": list(tech.values())[:14],
+        "evidence_counts": counts,
+        "bullet_count": len(p.bullets),
         "topics": p.topics or [],
-        "asset_type": p.asset_type, "asset_type_locked": p.asset_type_locked, "resume_eligible": p.resume_eligible,
-        "status": p.status, "evidence_eligible": p.evidence_eligible,
+        "asset_type": p.asset_type,
+        "asset_type_locked": p.asset_type_locked,
+        "resume_eligible": p.resume_eligible,
+        "status": p.status,
+        "evidence_eligible": p.evidence_eligible,
     }
     if full:
         total = sum((p.languages or {}).values()) or 1
-        out.update({
-            "evidence": [evidence_out(e) for e in p.evidence],
-            "bullets": [{"id": b.id, "text": b.text, "source": b.source} for b in p.bullets],
-            "languages": [{"name": k, "share": round(v / total * 100, 1)} for k, v in (p.languages or {}).items()][:8],
-            "readme_excerpt": p.readme_excerpt[:1500], "file_count": p.file_count,
-        })
+        out.update(
+            {
+                "evidence": [evidence_out(e) for e in p.evidence],
+                "bullets": [{"id": b.id, "text": b.text, "source": b.source} for b in p.bullets],
+                "languages": [{"name": k, "share": round(v / total * 100, 1)} for k, v in (p.languages or {}).items()][
+                    :8
+                ],
+                "readme_excerpt": p.readme_excerpt[:1500],
+                "file_count": p.file_count,
+            }
+        )
     return out
 
 
 def _owned(db: Session, user_id: int, pid: int) -> Project:
-    p = db.scalar(select(Project).where(Project.id == pid, Project.user_id == user_id)
-                  .options(selectinload(Project.evidence), selectinload(Project.bullets)))
+    p = db.scalar(
+        select(Project)
+        .where(Project.id == pid, Project.user_id == user_id)
+        .options(selectinload(Project.evidence), selectinload(Project.bullets))
+    )
     if p is None:
         raise NotFound("Project")
     return p
@@ -77,9 +112,12 @@ def _owned(db: Session, user_id: int, pid: int) -> Project:
 
 @router.get("/projects")
 def list_projects(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows = db.scalars(select(Project).where(Project.user_id == user.id)
-                      .options(selectinload(Project.evidence), selectinload(Project.bullets))
-                      .order_by(Project.hidden, Project.pushed_at.desc().nulls_last(), Project.id)).all()
+    rows = db.scalars(
+        select(Project)
+        .where(Project.user_id == user.id)
+        .options(selectinload(Project.evidence), selectinload(Project.bullets))
+        .order_by(Project.hidden, Project.pushed_at.desc().nulls_last(), Project.id)
+    ).all()
     return [project_out(p) for p in rows]
 
 
@@ -101,8 +139,16 @@ def create_manual_project(body: ProjectIn, user: User = Depends(current_user), d
     slug, n = base, 2
     while db.scalar(select(Project.id).where(Project.user_id == user.id, Project.slug == slug)):
         slug, n = f"{base}-{n}", n + 1
-    p = Project(user_id=user.id, name=body.display_name, display_name=body.display_name, slug=slug, origin="manual",
-                description=body.description, homepage_url=body.homepage_url, repo_url=body.repo_url)
+    p = Project(
+        user_id=user.id,
+        name=body.display_name,
+        display_name=body.display_name,
+        slug=slug,
+        origin="manual",
+        description=body.description,
+        homepage_url=body.homepage_url,
+        repo_url=body.repo_url,
+    )
     apply_classification(p)
     db.add(p)
     db.commit()
@@ -124,8 +170,10 @@ def update_project(pid: int, body: ProjectPatch, user: User = Depends(current_us
     p = _owned(db, user.id, pid)
     data = body.model_dump(exclude_none=True)
     if p.asset_type_locked and (data.get("asset_type") == "project" or data.get("resume_eligible") is True):
-        raise AppError("This is your portfolio/profile. It can only be used as a header link, never as a project.",
-                       code="profile_asset_locked")
+        raise AppError(
+            "This is your portfolio/profile. It can only be used as a header link, never as a project.",
+            code="profile_asset_locked",
+        )
     for k, v in data.items():
         setattr(p, k, v.strip() if isinstance(v, str) else v)
     if p.asset_type == "personal_profile":
@@ -153,8 +201,11 @@ def set_bullets(pid: int, body: BulletsIn, user: User = Depends(current_user), d
     p = _owned(db, user.id, pid)
     p.bullets.clear()
     db.flush()
-    p.bullets.extend(ProjectBullet(text=b.strip()[:500], source="user_provided", sort_order=i)
-                     for i, b in enumerate(body.bullets) if b.strip())
+    p.bullets.extend(
+        ProjectBullet(text=b.strip()[:500], source="user_provided", sort_order=i)
+        for i, b in enumerate(body.bullets)
+        if b.strip()
+    )
     db.commit()
     return project_out(p, full=True)
 
@@ -169,10 +220,20 @@ class EvidenceIn(BaseModel):
 def add_evidence(pid: int, body: EvidenceIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _owned(db, user.id, pid)
     key = canonicalize(body.label) if body.kind in ("technology", "concept", "testing") else ""
-    db.add(ProjectEvidence(project_id=p.id, kind=body.kind, label=display_name(key) if key and not key.startswith("x:")
-                           else body.label.strip(), canonical=key, category=category_of(key) if key else "",
-                           status="user_provided", source_type="user", source_detail="added by you",
-                           snippet=body.note.strip(), user_reviewed=True))
+    db.add(
+        ProjectEvidence(
+            project_id=p.id,
+            kind=body.kind,
+            label=display_name(key) if key and not key.startswith("x:") else body.label.strip(),
+            canonical=key,
+            category=category_of(key) if key else "",
+            status="user_provided",
+            source_type="user",
+            source_detail="added by you",
+            snippet=body.note.strip(),
+            user_reviewed=True,
+        )
+    )
     db.commit()
     return project_out(_owned(db, user.id, pid), full=True)
 
@@ -182,8 +243,9 @@ class EvidencePatch(BaseModel):
 
 
 @router.patch("/projects/{pid}/evidence/{eid}")
-def review_evidence(pid: int, eid: int, body: EvidencePatch, user: User = Depends(current_user),
-                    db: Session = Depends(get_db)):
+def review_evidence(
+    pid: int, eid: int, body: EvidencePatch, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     p = _owned(db, user.id, pid)
     e = next((x for x in p.evidence if x.id == eid), None)
     if e is None:
@@ -214,19 +276,32 @@ def delete_evidence(pid: int, eid: int, user: User = Depends(current_user), db: 
 
 # --- GitHub scanning ------------------------------------------------------------------------------
 
+
 @router.post("/github/scan")
 def scan(body: dict | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
     settings = db.get(UserSettings, user.id)
     if not settings.github_username:
-        raise AppError("Add your GitHub username in Settings > GitHub first.", code="github_not_connected",
-                       actions=["open_settings"])
-    running = db.scalar(select(BackgroundTask).where(BackgroundTask.user_id == user.id,
-                                                     BackgroundTask.kind == "github_scan",
-                                                     BackgroundTask.status.in_(("queued", "running"))))
+        raise AppError(
+            "Add your GitHub username in Settings > GitHub first.",
+            code="github_not_connected",
+            actions=["open_settings"],
+        )
+    running = db.scalar(
+        select(BackgroundTask).where(
+            BackgroundTask.user_id == user.id,
+            BackgroundTask.kind == "github_scan",
+            BackgroundTask.status.in_(("queued", "running")),
+        )
+    )
     if running:
         return {"task_id": running.id}
-    task = enqueue(db, user.id, "github_scan", {"force": bool((body or {}).get("force"))},
-                   ["Listing repositories", "Inspecting repositories", "Checking suggested projects"])
+    task = enqueue(
+        db,
+        user.id,
+        "github_scan",
+        {"force": bool((body or {}).get("force"))},
+        ["Listing repositories", "Inspecting repositories", "Checking suggested projects"],
+    )
     return {"task_id": task.id}
 
 
@@ -237,19 +312,35 @@ class RepoIn(BaseModel):
 @router.post("/github/repos")
 def add_repo(body: RepoIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     full = parse_repo_url(body.repo_url)
-    task = enqueue(db, user.id, "github_scan_repo", {"full_name": full},
-                   ["Reading repository", "Extracting evidence", "Checking suggested projects"])
+    task = enqueue(
+        db,
+        user.id,
+        "github_scan_repo",
+        {"full_name": full},
+        ["Reading repository", "Extracting evidence", "Checking suggested projects"],
+    )
     return {"task_id": task.id}
 
 
 # --- suggested projects ---------------------------------------------------------------------------
 
+
 def suggestion_out(s: SuggestedProject) -> dict:
-    return {"id": s.id, "title": s.title, "job_id": s.job_id, "gap_skills": [display_name(k) for k in s.gap_skills],
-            "gap_keys": s.gap_skills, "existing_skills": [display_name(k) for k in s.existing_skills],
-            "status": s.status, "plan": s.plan, "linked_project_id": s.linked_project_id,
-            "verification_notes": s.verification_notes, "verification": s.verification or [],
-            "auto_generated": s.auto_generated, "created_at": s.created_at.isoformat()}
+    return {
+        "id": s.id,
+        "title": s.title,
+        "job_id": s.job_id,
+        "gap_skills": [display_name(k) for k in s.gap_skills],
+        "gap_keys": s.gap_skills,
+        "existing_skills": [display_name(k) for k in s.existing_skills],
+        "status": s.status,
+        "plan": s.plan,
+        "linked_project_id": s.linked_project_id,
+        "verification_notes": s.verification_notes,
+        "verification": s.verification or [],
+        "auto_generated": s.auto_generated,
+        "created_at": s.created_at.isoformat(),
+    }
 
 
 class SuggestIn(BaseModel):
@@ -272,8 +363,15 @@ def suggest(job_id: int, body: SuggestIn, user: User = Depends(current_user), db
     if provider is not None:
         plan = llm_plan(provider, gaps, anchors, job.role_title, job.company, job.description_text[:4000])
     plan = plan or deterministic_plan(gaps, anchors, job.role_title, job.company)
-    s = SuggestedProject(user_id=user.id, job_id=job.id, title=plan["title"][:200], gap_skills=gaps,
-                         existing_skills=anchors, status="idea", plan=plan)
+    s = SuggestedProject(
+        user_id=user.id,
+        job_id=job.id,
+        title=plan["title"][:200],
+        gap_skills=gaps,
+        existing_skills=anchors,
+        status="idea",
+        plan=plan,
+    )
     db.add(s)
     db.commit()
     return suggestion_out(s)
@@ -281,8 +379,14 @@ def suggest(job_id: int, body: SuggestIn, user: User = Depends(current_user), db
 
 @router.get("/suggested-projects")
 def list_suggestions(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [suggestion_out(s) for s in db.scalars(select(SuggestedProject).where(SuggestedProject.user_id == user.id)
-                                                  .order_by(SuggestedProject.created_at.desc()))]
+    return [
+        suggestion_out(s)
+        for s in db.scalars(
+            select(SuggestedProject)
+            .where(SuggestedProject.user_id == user.id)
+            .order_by(SuggestedProject.created_at.desc())
+        )
+    ]
 
 
 def _owned_suggestion(db: Session, user_id: int, sid: int) -> SuggestedProject:
@@ -302,8 +406,9 @@ class SuggestionPatch(BaseModel):
 
 
 @router.patch("/suggested-projects/{sid}")
-def update_suggestion(sid: int, body: SuggestionPatch, user: User = Depends(current_user),
-                      db: Session = Depends(get_db)):
+def update_suggestion(
+    sid: int, body: SuggestionPatch, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     s = _owned_suggestion(db, user.id, sid)
     if s.status == "verified":
         raise AppError("This project is already verified from its repository.", code="already_verified")
@@ -319,17 +424,28 @@ def link_suggestion(sid: int, body: RepoIn, user: User = Depends(current_user), 
     full = parse_repo_url(body.repo_url)
     existing = db.scalar(select(Project).where(Project.user_id == user.id, Project.repo_full_name.ilike(full)))
     if existing is None:
-        existing = Project(user_id=user.id, name=full.split("/")[-1], display_name=s.title, origin="github",
-                           slug=slugify(full.split("/")[-1]) + f"-{s.id}", repo_full_name=full,
-                           repo_url=f"https://github.com/{full}")
+        existing = Project(
+            user_id=user.id,
+            name=full.split("/")[-1],
+            display_name=s.title,
+            origin="github",
+            slug=slugify(full.split("/")[-1]) + f"-{s.id}",
+            repo_full_name=full,
+            repo_url=f"https://github.com/{full}",
+        )
         db.add(existing)
         db.flush()
     s.linked_project_id = existing.id
     s.status = "building"
     s.verification_notes = "Scanning the repository..."
     db.commit()
-    task = enqueue(db, user.id, "github_scan_repo", {"full_name": full},
-                   ["Reading repository", "Extracting evidence", "Checking suggested projects"])
+    task = enqueue(
+        db,
+        user.id,
+        "github_scan_repo",
+        {"full_name": full},
+        ["Reading repository", "Extracting evidence", "Checking suggested projects"],
+    )
     return {"suggestion": suggestion_out(s), "task_id": task.id}
 
 

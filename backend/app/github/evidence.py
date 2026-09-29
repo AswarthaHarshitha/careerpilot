@@ -24,25 +24,70 @@ from app.matching.taxonomy import (
 )
 
 MANIFEST_NAMES = {
-    "package.json", "requirements.txt", "requirements-dev.txt", "requirements_dev.txt", "pyproject.toml", "Pipfile",
-    "pom.xml", "build.gradle", "build.gradle.kts", "go.mod", "Cargo.toml", "Gemfile", "composer.json",
-    "environment.yml", "setup.py",
+    "package.json",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "requirements_dev.txt",
+    "pyproject.toml",
+    "Pipfile",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "go.mod",
+    "Cargo.toml",
+    "Gemfile",
+    "composer.json",
+    "environment.yml",
+    "setup.py",
 }
 MAX_MANIFESTS = 8
 SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|dist|build|\.venv|venv|site-packages|\.next|coverage|target)/")
 
 EXTENSION_LANGUAGES = {
-    ".py": "Python", ".ipynb": "Jupyter Notebook", ".java": "Java", ".js": "JavaScript", ".jsx": "JavaScript",
-    ".mjs": "JavaScript", ".cjs": "JavaScript", ".ts": "TypeScript", ".tsx": "TypeScript", ".cpp": "C++",
-    ".cc": "C++", ".hpp": "C++", ".c": "C", ".h": "C", ".cs": "C#", ".go": "Go", ".rs": "Rust", ".kt": "Kotlin",
-    ".swift": "Swift", ".rb": "Ruby", ".php": "PHP", ".scala": "Scala", ".r": "R", ".m": "MATLAB", ".sh": "Shell",
-    ".html": "HTML", ".css": "CSS", ".scss": "SCSS", ".dart": "Dart", ".sql": "TSQL", ".vue": "Vue",
-    ".svelte": "Svelte", ".tf": "HCL", ".cds": "CAP CDS", ".abap": "ABAP", ".sol": "Solidity",
+    ".py": "Python",
+    ".ipynb": "Jupyter Notebook",
+    ".java": "Java",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".mjs": "JavaScript",
+    ".cjs": "JavaScript",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".cpp": "C++",
+    ".cc": "C++",
+    ".hpp": "C++",
+    ".c": "C",
+    ".h": "C",
+    ".cs": "C#",
+    ".go": "Go",
+    ".rs": "Rust",
+    ".kt": "Kotlin",
+    ".swift": "Swift",
+    ".rb": "Ruby",
+    ".php": "PHP",
+    ".scala": "Scala",
+    ".r": "R",
+    ".m": "MATLAB",
+    ".sh": "Shell",
+    ".html": "HTML",
+    ".css": "CSS",
+    ".scss": "SCSS",
+    ".dart": "Dart",
+    ".sql": "TSQL",
+    ".vue": "Vue",
+    ".svelte": "Svelte",
+    ".tf": "HCL",
+    ".cds": "CAP CDS",
+    ".abap": "ABAP",
+    ".sol": "Solidity",
 }
 SOURCE_RANK = {"dependency": 0, "file_tree": 1, "language": 2, "readme": 3, "metadata": 4, "user": 0, "llm": 9}
-DEPLOY_HOSTS = re.compile(r"https?://[\w.-]+\.(?:vercel\.app|onrender\.com|netlify\.app|herokuapp\.com|github\.io|"
-                          r"fly\.dev|railway\.app|pages\.dev|streamlit\.app|azurewebsites\.net|web\.app|"
-                          r"firebaseapp\.com|hf\.space)[^\s)\"'>\]]*", re.I)
+DEPLOY_HOSTS = re.compile(
+    r"https?://[\w.-]+\.(?:vercel\.app|onrender\.com|netlify\.app|herokuapp\.com|github\.io|"
+    r"fly\.dev|railway\.app|pages\.dev|streamlit\.app|azurewebsites\.net|web\.app|"
+    r"firebaseapp\.com|hf\.space)[^\s)\"'>\]]*",
+    re.I,
+)
 
 
 @dataclass
@@ -113,7 +158,9 @@ def parse_dependencies(path: str, content: str) -> list[str]:
             for group in (data.get("dependency-groups") or {}).values():
                 deps += [d for d in group if isinstance(d, str)]
             poetry = data.get("tool", {}).get("poetry", {})
-            deps += list((poetry.get("dependencies") or {}).keys()) + list((poetry.get("dev-dependencies") or {}).keys())
+            deps += list((poetry.get("dependencies") or {}).keys()) + list(
+                (poetry.get("dev-dependencies") or {}).keys()
+            )
             for d in deps:
                 m = re.match(r"([A-Za-z0-9_.\-]+)", d)
                 if m:
@@ -175,8 +222,11 @@ _NEGATION = re.compile(
     r"doesn'?t|don'?t|won'?t|lacks?|except|dropped|removed|deliberately not|in place of|vs\.?|versus)\b",
     re.I,
 )
-_HYPOTHETICAL = re.compile(r"\b(?:if|would|could|might|may|future|later|planned|plan to|consider(?:ed|ing)?|"
-                           r"eventually|someday|roadmap|todo|should)\b", re.I)
+_HYPOTHETICAL = re.compile(
+    r"\b(?:if|would|could|might|may|future|later|planned|plan to|consider(?:ed|ing)?|"
+    r"eventually|someday|roadmap|todo|should)\b",
+    re.I,
+)
 
 
 def statements_only(text: str) -> str:
@@ -237,15 +287,33 @@ def analyze_repository(
         share = size / total
         key = GITHUB_LANGUAGES.get(lang)
         if key and (share >= 0.03 or size >= 20_000):
-            items.append(EvidenceItem("technology", display_name(key), key, category_of(key), "verified", "language",
-                                      f"{round(share * 100)}% of source by size"))
+            items.append(
+                EvidenceItem(
+                    "technology",
+                    display_name(key),
+                    key,
+                    category_of(key),
+                    "verified",
+                    "language",
+                    f"{round(share * 100)}% of source by size",
+                )
+            )
 
     # Declared dependencies.
     for path, content in manifests.items():
         for pkg in parse_dependencies(path, content):
             for key in PACKAGE_SKILLS.get(pkg, ()):
-                items.append(EvidenceItem("technology", display_name(key), key, category_of(key), "verified",
-                                          "dependency", f"{path}: {pkg}"))
+                items.append(
+                    EvidenceItem(
+                        "technology",
+                        display_name(key),
+                        key,
+                        category_of(key),
+                        "verified",
+                        "dependency",
+                        f"{path}: {pkg}",
+                    )
+                )
 
     # Files that exist in the repository.
     for rx, keys, reason in FILE_MARKERS:
@@ -253,20 +321,39 @@ def analyze_repository(
         if hit:
             for key in keys:
                 kind = "testing" if category_of(key) == "testing" else "technology"
-                items.append(EvidenceItem(kind, display_name(key), key, category_of(key), "verified", "file_tree",
-                                          f"{reason} ({hit})"))
-    test_files = [p for p in paths if re.search(r"(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.\w+$|(^|/)test_\w+\.py$",
-                                                 p) and not SKIP_DIRS.search(p + "/")]
+                items.append(
+                    EvidenceItem(
+                        kind, display_name(key), key, category_of(key), "verified", "file_tree", f"{reason} ({hit})"
+                    )
+                )
+    test_files = [
+        p
+        for p in paths
+        if re.search(r"(^|/)(tests?|__tests__|spec)/|\.(test|spec)\.\w+$|(^|/)test_\w+\.py$", p)
+        and not SKIP_DIRS.search(p + "/")
+    ]
     if test_files:
-        items.append(EvidenceItem("testing", "Automated tests", "testing", "testing", "verified", "file_tree",
-                                  f"{len(test_files)} test files"))
+        items.append(
+            EvidenceItem(
+                "testing",
+                "Automated tests",
+                "testing",
+                "testing",
+                "verified",
+                "file_tree",
+                f"{len(test_files)} test files",
+            )
+        )
 
     # Concepts suggested by module names: inferred only.
     for rx, key, reason in CONCEPT_FILE_HINTS:
         hit = next((p for p in paths if rx.search(p) and not SKIP_DIRS.search(p + "/")), None)
         if hit:
-            items.append(EvidenceItem("concept", display_name(key), key, category_of(key), "inferred", "file_tree",
-                                      f"{reason} ({hit})"))
+            items.append(
+                EvidenceItem(
+                    "concept", display_name(key), key, category_of(key), "inferred", "file_tree", f"{reason} ({hit})"
+                )
+            )
 
     # Explicit statements in the README and repository description.
     text = clean_readme(readme or "")
@@ -279,13 +366,25 @@ def analyze_repository(
             continue
         seen_readme.add(m.key)
         kind = "concept" if category_of(m.key) in ("concept", "security") else "technology"
-        items.append(EvidenceItem(kind, display_name(m.key), m.key, category_of(m.key), "verified", "readme",
-                                  "stated in README/description", _sentence_around(statement_text, m.start, m.end)))
+        items.append(
+            EvidenceItem(
+                kind,
+                display_name(m.key),
+                m.key,
+                category_of(m.key),
+                "verified",
+                "readme",
+                "stated in README/description",
+                _sentence_around(statement_text, m.start, m.end),
+            )
+        )
 
     for feat in _section_lines(text, r"features?|what it does|highlights|capabilities|key features"):
         items.append(EvidenceItem("feature", feat[:200], "", "", "verified", "readme", "README features section"))
     for arch in _section_lines(text, r"architecture|design|how it works|system design", limit=5):
-        items.append(EvidenceItem("architecture", arch[:200], "", "", "verified", "readme", "README architecture section"))
+        items.append(
+            EvidenceItem("architecture", arch[:200], "", "", "verified", "readme", "README architecture section")
+        )
 
     deploy_urls = []
     if homepage and homepage.startswith("http"):

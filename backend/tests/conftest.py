@@ -12,15 +12,17 @@ import pytest
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-os.environ.update({
-    "APP_ENV": "test",
-    "WORKER_ENABLED": "false",
-    "JWT_SECRET": "test-secret-0123456789-0123456789-0123456789",
-    "LLM_PROVIDER": "none",
-    "GITHUB_TOKEN": "",
-    "ALLOW_REGISTRATION": "false",
-    "COOKIE_SECURE": "false",
-})
+os.environ.update(
+    {
+        "APP_ENV": "test",
+        "WORKER_ENABLED": "false",
+        "JWT_SECRET": "test-secret-0123456789-0123456789-0123456789",
+        "LLM_PROVIDER": "none",
+        "GITHUB_TOKEN": "",
+        "ALLOW_REGISTRATION": "false",
+        "COOKIE_SECURE": "false",
+    }
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 STRONG_PASSWORD = "Correct-Horse-42-battery"

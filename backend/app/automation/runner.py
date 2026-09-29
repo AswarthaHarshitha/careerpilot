@@ -58,8 +58,9 @@ class Api:
         return self._check(self.http.get(f"{self.base}/api/runner/sessions/{sid}"))
 
     def post_fields(self, sid: int, step: int, fields: list[dict]) -> dict:
-        return self._check(self.http.post(f"{self.base}/api/runner/sessions/{sid}/fields",
-                                          json={"step": step, "fields": fields}))
+        return self._check(
+            self.http.post(f"{self.base}/api/runner/sessions/{sid}/fields", json={"step": step, "fields": fields})
+        )
 
     def report(self, sid: int, **body) -> dict:
         return self._check(self.http.post(f"{self.base}/api/runner/sessions/{sid}/report", json=body))
@@ -100,8 +101,15 @@ class SessionRunner:
         self.filled_revision = -1
 
     def report(self, state: str, message: str = "", **extra) -> dict:
-        return self.api.report(self.sid, state=state, message=message, current_url=self.page.url, step=self.step,
-                               screenshot_b64=_screenshot(self.page), **extra)
+        return self.api.report(
+            self.sid,
+            state=state,
+            message=message,
+            current_url=self.page.url,
+            step=self.step,
+            screenshot_b64=_screenshot(self.page),
+            **extra,
+        )
 
     def run(self) -> str:
         B = self.B
@@ -150,10 +158,15 @@ class SessionRunner:
                     announced = obstacle
                 time.sleep(POLL_SECONDS)
                 continue
-            fields = [f for f in B.inspect_form(self.page) if f.data["input_type"] != "checkbox"
-                      or f.data.get("option_refs")]
-            meaningful = [f for f in fields if f.data["input_type"] in ("text", "email", "tel", "file", "textarea",
-                                                                      "select", "radio", "combobox", "url")]
+            fields = [
+                f for f in B.inspect_form(self.page) if f.data["input_type"] != "checkbox" or f.data.get("option_refs")
+            ]
+            meaningful = [
+                f
+                for f in fields
+                if f.data["input_type"]
+                in ("text", "email", "tel", "file", "textarea", "select", "radio", "combobox", "url")
+            ]
             if len(meaningful) >= 2:
                 return True
             if apply_clicks < 3 and B.click_apply(self.page):
@@ -162,8 +175,11 @@ class SessionRunner:
                 continue
             empty_polls += 1
             if announced is None and empty_polls >= 6:
-                self.report("unsupported", "No application form was found on this page. The site may use a portal "
-                                           "CareerPilot cannot read. Open the job and apply manually.")
+                self.report(
+                    "unsupported",
+                    "No application form was found on this page. The site may use a portal "
+                    "CareerPilot cannot read. Open the job and apply manually.",
+                )
                 return False
             time.sleep(POLL_SECONDS)
         self.report("failed", "Stopped waiting: the page never reached an application form.")
@@ -175,8 +191,15 @@ class SessionRunner:
         payload = []
         for f in found:
             d = f.data
-            payload.append({"field_ref": f.ref, "label": d["label"], "input_type": d["input_type"],
-                            "required": d.get("required", False), "options": d.get("options", [])})
+            payload.append(
+                {
+                    "field_ref": f.ref,
+                    "label": d["label"],
+                    "input_type": d["input_type"],
+                    "required": d.get("required", False),
+                    "options": d.get("options", []),
+                }
+            )
         return self.api.post_fields(self.sid, self.step, payload)
 
     def _fill(self, ins: dict) -> None:
@@ -184,8 +207,15 @@ class SessionRunner:
         for item in ins["fill"]:
             if item.get("step", 0) != self.step:
                 continue
-            ok, msg = self.B.fill_field(self.page, self.found, item["field_ref"], item["action"], item["value"],
-                                        item["input_type"], self.resume_path)
+            ok, msg = self.B.fill_field(
+                self.page,
+                self.found,
+                item["field_ref"],
+                item["action"],
+                item["value"],
+                item["input_type"],
+                self.resume_path,
+            )
             results.append({"field_ref": item["field_ref"], "ok": ok, "validation_message": msg})
         errors = {e["ref"]: e["message"] for e in self.B.validation_errors(self.page) if e["ref"]}
         for r in results:
@@ -193,8 +223,11 @@ class SessionRunner:
                 r["validation_message"] = errors[r["field_ref"]]
         self.filled_revision = ins["answers_revision"]
         pending = ins.get("unresolved") or []
-        msg = ("Filled what your profile answers. Review the application in CareerPilot."
-               if not pending else f"{len(pending)} field(s) need your answer in CareerPilot.")
+        msg = (
+            "Filled what your profile answers. Review the application in CareerPilot."
+            if not pending
+            else f"{len(pending)} field(s) need your answer in CareerPilot."
+        )
         self.report("awaiting_review", msg, fill_results=results, filled_revision=self.filled_revision)
 
     def _next_step(self, hit) -> None:
@@ -217,8 +250,10 @@ class SessionRunner:
         B = self.B
         hit = B.find_button(self.page, B.SUBMIT_TEXT, prefer_submit_type=True)
         if not hit:
-            self.report("submitted_unverified", "You confirmed, but no submit button was found. Submit it in the "
-                                                "browser window; nothing was clicked.")
+            self.report(
+                "submitted_unverified",
+                "You confirmed, but no submit button was found. Submit it in the browser window; nothing was clicked.",
+            )
             return "submitted_unverified"
         self.report("submitting", "Submitting the application...")
         frame, btn = hit
@@ -235,11 +270,18 @@ class SessionRunner:
             return "submitted"
         errors = B.validation_errors(self.page)
         if errors and self.page.url == before:
-            self.report("submitted_unverified", "The site did not accept the submission: "
-                        + "; ".join(e["message"] for e in errors[:3]) + ". Fix it in the browser window.")
+            self.report(
+                "submitted_unverified",
+                "The site did not accept the submission: "
+                + "; ".join(e["message"] for e in errors[:3])
+                + ". Fix it in the browser window.",
+            )
             return "submitted_unverified"
-        self.report("submitted_unverified", "Submission status could not be verified. Please check the application "
-                                            "portal.", result_text=text)
+        self.report(
+            "submitted_unverified",
+            "Submission status could not be verified. Please check the application portal.",
+            result_text=text,
+        )
         return "submitted_unverified"
 
 
@@ -250,14 +292,24 @@ def browser_profile_dir() -> str:
     return str(path)
 
 
-def run_loop(api: Api, headless: bool = False, once: bool = False, idle_poll: float = 5.0,
-             profile_dir: str | None = None, user_wait: float = USER_WAIT_SECONDS) -> list[str]:
+def run_loop(
+    api: Api,
+    headless: bool = False,
+    once: bool = False,
+    idle_poll: float = 5.0,
+    profile_dir: str | None = None,
+    user_wait: float = USER_WAIT_SECONDS,
+) -> list[str]:
     from playwright.sync_api import sync_playwright
 
     results = []
     with sync_playwright() as pw, tempfile.TemporaryDirectory(prefix="cp-runner-") as workdir:
-        ctx = pw.chromium.launch_persistent_context(profile_dir or browser_profile_dir(), headless=headless,
-                                                    accept_downloads=False, viewport={"width": 1280, "height": 900})
+        ctx = pw.chromium.launch_persistent_context(
+            profile_dir or browser_profile_dir(),
+            headless=headless,
+            accept_downloads=False,
+            viewport={"width": 1280, "height": 900},
+        )
         try:
             while True:
                 session = api.claim()
@@ -275,8 +327,11 @@ def run_loop(api: Api, headless: bool = False, once: bool = False, idle_poll: fl
                 except Exception as exc:  # noqa: BLE001
                     log.error("Session %s failed: %s", session["session_id"], exc)
                     try:
-                        api.report(session["session_id"], state="failed",
-                                   message=f"The apply agent hit an error ({type(exc).__name__}). Nothing was submitted.")
+                        api.report(
+                            session["session_id"],
+                            state="failed",
+                            message=f"The apply agent hit an error ({type(exc).__name__}). Nothing was submitted.",
+                        )
                     except Exception:  # noqa: BLE001
                         pass
                     state = "failed"
@@ -293,14 +348,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CareerPilot apply agent")
     parser.add_argument("--api", default=os.environ.get("CAREERPILOT_API", "http://localhost:8000"))
     parser.add_argument("--token", default=os.environ.get("CAREERPILOT_TOKEN", ""))
-    parser.add_argument("--headless", action="store_true", help="for automated tests only; you cannot log in or "
-                                                                "solve CAPTCHAs in headless mode")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="for automated tests only; you cannot log in or solve CAPTCHAs in headless mode",
+    )
     parser.add_argument("--once", action="store_true", help="process one session and exit")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     if not args.token:
-        print("Create a runner token in CareerPilot (Settings > Browser automation) and pass it with --token or "
-              "CAREERPILOT_TOKEN.", file=sys.stderr)
+        print(
+            "Create a runner token in CareerPilot (Settings > Browser automation) and pass it with --token or "
+            "CAREERPILOT_TOKEN.",
+            file=sys.stderr,
+        )
         return 2
     api = Api(args.api, args.token)
     try:

@@ -19,8 +19,17 @@ from app.core.errors import ExternalFetchError
 log = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (compatible; CareerPilot/0.1; personal job-application workspace)"
-ALLOWED_CONTENT_TYPES = ("text/html", "application/xhtml", "application/json", "text/plain", "application/pdf",
-                         "application/ld+json", "text/xml", "application/xml", "application/vnd.github")
+ALLOWED_CONTENT_TYPES = (
+    "text/html",
+    "application/xhtml",
+    "application/json",
+    "text/plain",
+    "application/pdf",
+    "application/ld+json",
+    "text/xml",
+    "application/xml",
+    "application/vnd.github",
+)
 MAX_REDIRECTS = 5
 
 
@@ -130,12 +139,14 @@ def fetch(
                     return FetchResult(current, resp.status_code, ctype, b"".join(chunks), dict(resp.headers))
             raise ExternalFetchError("The page redirected too many times.")
     except httpx.TimeoutException as exc:
-        raise ExternalFetchError("The page took too long to respond.", hint="The site may be slow or blocking "
-                                 "automated requests.") from exc
+        raise ExternalFetchError(
+            "The page took too long to respond.", hint="The site may be slow or blocking automated requests."
+        ) from exc
     except httpx.HTTPError as exc:
         log.info("fetch failed for host=%s: %s", urlsplit(current).hostname, type(exc).__name__)
-        raise ExternalFetchError("The page could not be reached.", hint="The site may be down or blocking "
-                                 "automated requests.") from exc
+        raise ExternalFetchError(
+            "The page could not be reached.", hint="The site may be down or blocking automated requests."
+        ) from exc
 
 
 def _status_error(status: int, url: str) -> ExternalFetchError:
@@ -147,10 +158,13 @@ def _status_error(status: int, url: str) -> ExternalFetchError:
             actions=["open_manually", "paste_description", "retry"],
         )
     if status == 404:
-        return ExternalFetchError(f"The job page was not found on {host} (HTTP 404).",
-                                  hint="The posting may have been closed or the link is incomplete.",
-                                  actions=["open_manually", "paste_description"])
+        return ExternalFetchError(
+            f"The job page was not found on {host} (HTTP 404).",
+            hint="The posting may have been closed or the link is incomplete.",
+            actions=["open_manually", "paste_description"],
+        )
     if status == 429:
         return ExternalFetchError(f"{host} is rate-limiting requests (HTTP 429).", hint="Wait a minute and retry.")
-    return ExternalFetchError(f"{host} returned HTTP {status}.", actions=["retry", "open_manually",
-                                                                           "paste_description"])
+    return ExternalFetchError(
+        f"{host} returned HTTP {status}.", actions=["retry", "open_manually", "paste_description"]
+    )

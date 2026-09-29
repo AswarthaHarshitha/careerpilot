@@ -19,7 +19,7 @@ from app.llm.provider import resolve_config
 from app.resume.latex_compile import resolve_engine
 
 # Importing registers the background task handlers.
-from app.services import github_scan, jobs as job_service, resumes as resume_service  # noqa: F401
+from app.services import github_scan  # noqa: F401
 from app.tasks.queue import start_workers, stop_workers
 
 log = logging.getLogger("careerpilot")
@@ -57,14 +57,23 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="CareerPilot API", version="0.1.0", lifespan=lifespan,
-                  docs_url="/api/docs" if settings.app_env != "production" else None, redoc_url=None,
-                  openapi_url="/api/openapi.json" if settings.app_env != "production" else None)
+    app = FastAPI(
+        title="CareerPilot API",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url="/api/docs" if settings.app_env != "production" else None,
+        redoc_url=None,
+        openapi_url="/api/openapi.json" if settings.app_env != "production" else None,
+    )
 
     if settings.cors_origins:
-        app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
-                           allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-                           allow_headers=["Content-Type", "X-CSRF-Token", "Authorization"])
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+            allow_headers=["Content-Type", "X-CSRF-Token", "Authorization"],
+        )
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -93,22 +102,46 @@ def create_app() -> FastAPI:
         first = exc.errors()[0] if exc.errors() else {}
         loc = ".".join(str(x) for x in first.get("loc", [])[1:])
         msg = first.get("msg", "Invalid input").removeprefix("Value error, ")
-        return JSONResponse(status_code=422, content={"error": {
-            "code": "validation_error", "message": f"{loc}: {msg}" if loc else msg, "hint": "", "actions": []}})
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": "validation_error",
+                    "message": f"{loc}: {msg}" if loc else msg,
+                    "hint": "",
+                    "actions": [],
+                }
+            },
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException):
         message = "Not found." if exc.status_code == 404 else str(exc.detail)
-        return JSONResponse(status_code=exc.status_code, content={"error": {
-            "code": "http_error", "message": message, "hint": "", "actions": []}})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": {"code": "http_error", "message": message, "hint": "", "actions": []}},
+        )
 
     @app.exception_handler(Exception)
     async def unhandled(request: Request, exc: Exception):
-        log.error("unhandled error on %s %s (request %s): %s", request.method, request.url.path,
-                  getattr(request.state, "request_id", "-"), type(exc).__name__)
-        return JSONResponse(status_code=500, content={"error": {
-            "code": "internal_error", "message": "Something went wrong on our side.",
-            "hint": f"Please retry. Reference: {getattr(request.state, 'request_id', '-')}", "actions": ["retry"]}})
+        log.error(
+            "unhandled error on %s %s (request %s): %s",
+            request.method,
+            request.url.path,
+            getattr(request.state, "request_id", "-"),
+            type(exc).__name__,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "code": "internal_error",
+                    "message": "Something went wrong on our side.",
+                    "hint": f"Please retry. Reference: {getattr(request.state, 'request_id', '-')}",
+                    "actions": ["retry"],
+                }
+            },
+        )
 
     @app.get("/api/health")
     def health():
@@ -119,9 +152,13 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001
             db_ok = False
         cfg = resolve_config(None)
-        body = {"status": "ok" if db_ok else "degraded", "database": "ok" if db_ok else "unavailable",
-                "latex_engine": resolve_engine() or "missing", "llm": cfg.provider if cfg else "none",
-                "version": app.version}
+        body = {
+            "status": "ok" if db_ok else "degraded",
+            "database": "ok" if db_ok else "unavailable",
+            "latex_engine": resolve_engine() or "missing",
+            "llm": cfg.provider if cfg else "none",
+            "version": app.version,
+        }
         return JSONResponse(status_code=200 if db_ok else 503, content=body)
 
     for module in (auth, profile, templates, projects, jobs, resumes, applications, runner, settings_api, dashboard):

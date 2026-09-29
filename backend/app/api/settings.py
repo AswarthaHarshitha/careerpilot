@@ -22,19 +22,34 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 def settings_out(s: UserSettings) -> dict:
     server = resolve_config(None)
     return {
-        "default_template_id": s.default_template_id, "resume_max_pages": s.resume_max_pages,
-        "max_projects": s.max_projects, "max_bullets_per_project": s.max_bullets_per_project, "timezone": s.timezone,
-        "submit_confirmation_mode": s.submit_confirmation_mode, "deadline_reminder_days": s.deadline_reminder_days,
-        "follow_up_after_days": s.follow_up_after_days, "notify_in_app": s.notify_in_app,
-        "header_portfolio": s.header_portfolio, "header_github": s.header_github, "header_linkedin": s.header_linkedin,
-        "ai": {"provider": s.llm_provider, "model": s.llm_model, "base_url": s.llm_base_url,
-               "api_key": mask_secret(decrypt_secret(s.llm_api_key_encrypted)),
-               "server_provider": server.provider if server else "none",
-               "server_model": server.model if server else ""},
-        "github": {"username": s.github_username, "token": mask_secret(decrypt_secret(s.github_token_encrypted)),
-                   "include_private_repos": s.include_private_repos, "include_forks": s.include_forks,
-                   "last_scan_at": s.github_last_scan_at.isoformat() if s.github_last_scan_at else None,
-                   "server_token": bool(get_settings().github_token)},
+        "default_template_id": s.default_template_id,
+        "resume_max_pages": s.resume_max_pages,
+        "max_projects": s.max_projects,
+        "max_bullets_per_project": s.max_bullets_per_project,
+        "timezone": s.timezone,
+        "submit_confirmation_mode": s.submit_confirmation_mode,
+        "deadline_reminder_days": s.deadline_reminder_days,
+        "follow_up_after_days": s.follow_up_after_days,
+        "notify_in_app": s.notify_in_app,
+        "header_portfolio": s.header_portfolio,
+        "header_github": s.header_github,
+        "header_linkedin": s.header_linkedin,
+        "ai": {
+            "provider": s.llm_provider,
+            "model": s.llm_model,
+            "base_url": s.llm_base_url,
+            "api_key": mask_secret(decrypt_secret(s.llm_api_key_encrypted)),
+            "server_provider": server.provider if server else "none",
+            "server_model": server.model if server else "",
+        },
+        "github": {
+            "username": s.github_username,
+            "token": mask_secret(decrypt_secret(s.github_token_encrypted)),
+            "include_private_repos": s.include_private_repos,
+            "include_forks": s.include_forks,
+            "last_scan_at": s.github_last_scan_at.isoformat() if s.github_last_scan_at else None,
+            "server_token": bool(get_settings().github_token),
+        },
     }
 
 
@@ -89,10 +104,12 @@ def update_ai(body: AIIn, user: User = Depends(current_user), db: Session = Depe
 def test_ai(user: User = Depends(current_user), db: Session = Depends(get_db)):
     provider = get_provider(db.get(UserSettings, user.id))
     if provider is None:
-        raise AppError("No AI provider is configured. CareerPilot works without one, using deterministic analysis.",
-                       code="no_provider")
+        raise AppError(
+            "No AI provider is configured. CareerPilot works without one, using deterministic analysis.",
+            code="no_provider",
+        )
     try:
-        data = provider.complete_json("Reply with JSON {\"ok\": true}.", "Connection test.", max_tokens=20)
+        data = provider.complete_json('Reply with JSON {"ok": true}.', "Connection test.", max_tokens=20)
     except LLMError as exc:
         raise AppError(str(exc), code="provider_error") from exc
     return {"ok": bool(data.get("ok")), "provider": provider.name}
@@ -126,12 +143,24 @@ def update_github(body: GitHubIn, user: User = Depends(current_user), db: Sessio
 
 # --- runner tokens --------------------------------------------------------------------------------
 
+
 @router.get("/runner-tokens")
 def list_tokens(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows = db.scalars(select(ApiToken).where(ApiToken.user_id == user.id, ApiToken.revoked_at.is_(None))
-                      .order_by(ApiToken.created_at.desc()))
-    return [{"id": t.id, "name": t.name, "prefix": t.prefix, "created_at": t.created_at.isoformat(),
-             "last_used_at": t.last_used_at.isoformat() if t.last_used_at else None} for t in rows]
+    rows = db.scalars(
+        select(ApiToken)
+        .where(ApiToken.user_id == user.id, ApiToken.revoked_at.is_(None))
+        .order_by(ApiToken.created_at.desc())
+    )
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "prefix": t.prefix,
+            "created_at": t.created_at.isoformat(),
+            "last_used_at": t.last_used_at.isoformat() if t.last_used_at else None,
+        }
+        for t in rows
+    ]
 
 
 class TokenIn(BaseModel):
@@ -147,8 +176,13 @@ def create_token(body: TokenIn, user: User = Depends(current_user), db: Session 
     t = ApiToken(user_id=user.id, name=body.name.strip(), token_hash=hashed, prefix=prefix)
     db.add(t)
     db.commit()
-    return {"id": t.id, "name": t.name, "prefix": prefix, "token": raw,
-            "note": "Copy this token now; it is not shown again."}
+    return {
+        "id": t.id,
+        "name": t.name,
+        "prefix": prefix,
+        "token": raw,
+        "note": "Copy this token now; it is not shown again.",
+    }
 
 
 @router.delete("/runner-tokens/{tid}")

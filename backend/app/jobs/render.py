@@ -5,6 +5,7 @@ redirects, scripts and XHR - is checked against the same rules as the plain fetc
 only), so a page cannot use the browser to reach private networks. Images, media and fonts are not loaded.
 """
 
+import contextlib
 import logging
 import threading
 from urllib.parse import urlsplit
@@ -58,15 +59,14 @@ def render_page(url: str, timeout_ms: int = 25_000) -> tuple[str, str]:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(args=["--disable-dev-shm-usage", "--no-zygote", "--disable-gpu"])
                 try:
-                    ctx = browser.new_context(user_agent=USER_AGENT, java_script_enabled=True,
-                                              service_workers="block", accept_downloads=False)
+                    ctx = browser.new_context(
+                        user_agent=USER_AGENT, java_script_enabled=True, service_workers="block", accept_downloads=False
+                    )
                     ctx.route("**/*", guard)
                     page = ctx.new_page()
                     page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                    try:
+                    with contextlib.suppress(PWError):
                         page.wait_for_load_state("networkidle", timeout=12_000)
-                    except PWError:
-                        pass
                     page.wait_for_timeout(800)
                     if not allowed(page.url):
                         raise ExternalFetchError("The page redirected to a private address.")

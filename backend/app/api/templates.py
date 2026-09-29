@@ -24,9 +24,15 @@ def _owned(db: Session, user_id: int, tid: int) -> ResumeTemplate:
 
 def template_out(t: ResumeTemplate, default_id: int | None) -> dict:
     return {
-        "id": t.id, "name": t.name, "format": t.format, "original_filename": t.original_filename,
-        "created_at": t.created_at.isoformat(), "page_count": t.page_count, "render_error": t.render_error,
-        "has_preview": t.preview_pdf is not None, "is_default": t.id == default_id,
+        "id": t.id,
+        "name": t.name,
+        "format": t.format,
+        "original_filename": t.original_filename,
+        "created_at": t.created_at.isoformat(),
+        "page_count": t.page_count,
+        "render_error": t.render_error,
+        "has_preview": t.preview_pdf is not None,
+        "is_default": t.id == default_id,
         "sections": summarize_structure(t.structure),
         "header": {k: v for k, v in (t.structure.get("header") or {}).items() if k != "span"},
         "analysis_pending": bool(t.structure.get("analysis_pending")) and not t.source_text,
@@ -41,14 +47,23 @@ def _fingerprint_summary(fp: dict | None) -> dict | None:
     if not fp:
         return None
     return {
-        "pages": fp["page"]["count"], "page_size": f"{fp['page']['width']:.0f} x {fp['page']['height']:.0f} pt",
+        "pages": fp["page"]["count"],
+        "page_size": f"{fp['page']['width']:.0f} x {fp['page']['height']:.0f} pt",
         "layout": "Two-column" if fp["columns"]["count"] == 2 else "One-column",
         "text": "Scanned (read with OCR)" if fp.get("ocr") else "Selectable",
-        "font": fp["fonts"]["detected"], "body_size": fp["body"]["size"],
-        "margins": fp["margins"], "section_order": fp["section_order"],
-        "heading_style": " ".join(x for x in ("bold" if fp["heading"]["bold"] else "",
-                                              "small caps" if fp["heading"]["caps"] else "",
-                                              "rule below" if fp["heading"]["rule"] else "") if x),
+        "font": fp["fonts"]["detected"],
+        "body_size": fp["body"]["size"],
+        "margins": fp["margins"],
+        "section_order": fp["section_order"],
+        "heading_style": " ".join(
+            x
+            for x in (
+                "bold" if fp["heading"]["bold"] else "",
+                "small caps" if fp["heading"]["caps"] else "",
+                "rule below" if fp["heading"]["rule"] else "",
+            )
+            if x
+        ),
         "bullet": fp["bullet"]["char"] if fp.get("bullet") else None,
     }
 
@@ -65,14 +80,19 @@ async def read_upload(file: UploadFile, max_bytes: int) -> bytes:
 @router.get("")
 def list_templates(user: User = Depends(current_user), db: Session = Depends(get_db)):
     settings = db.get(UserSettings, user.id)
-    rows = db.scalars(select(ResumeTemplate).where(ResumeTemplate.user_id == user.id)
-                      .order_by(ResumeTemplate.created_at.desc()))
+    rows = db.scalars(
+        select(ResumeTemplate).where(ResumeTemplate.user_id == user.id).order_by(ResumeTemplate.created_at.desc())
+    )
     return [template_out(t, settings.default_template_id if settings else None) for t in rows]
 
 
 @router.post("")
-async def upload_template(file: UploadFile = File(...), name: str = Form(default=""),
-                          user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def upload_template(
+    file: UploadFile = File(...),
+    name: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     data = await read_upload(file, get_settings().upload_max_bytes)
     filename = (file.filename or "resume").rsplit("/", 1)[-1][:200]
     tpl, task_id = create_template(db, user.id, filename, data, name.strip()[:200])
@@ -94,8 +114,9 @@ def _structure_detail(structure: dict) -> list[dict]:
     for s in structure.get("sections", []):
         item = {"index": s["index"], "title": s["title"], "kind": s["kind"], "layout": s["layout"]}
         if s["layout"] == "entries":
-            item["entries"] = [{"fields": e["fields"], "bullets": [it["text"] for it in e["items"]]}
-                               for e in s["entries"]]
+            item["entries"] = [
+                {"fields": e["fields"], "bullets": [it["text"] for it in e["items"]]} for e in s["entries"]
+            ]
         elif s["layout"] == "skills":
             item["skills"] = [{"name": c["name"], "items": c["items"]} for c in s["skills"]]
         elif s["layout"] == "items":
@@ -122,8 +143,9 @@ def original_pdf(tid: int, user: User = Depends(current_user), db: Session = Dep
     t = _owned(db, user.id, tid)
     if t.format != "pdf" or not t.source_bytes:
         raise NotFound("Original PDF")
-    return Response(t.source_bytes, media_type="application/pdf",
-                    headers={"Content-Disposition": "inline; filename=original.pdf"})
+    return Response(
+        t.source_bytes, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=original.pdf"}
+    )
 
 
 @router.get("/{tid}/preview.pdf")
@@ -131,8 +153,11 @@ def template_preview(tid: int, user: User = Depends(current_user), db: Session =
     t = _owned(db, user.id, tid)
     if t.preview_pdf is None:
         raise AppError(t.render_error or "The preview is still being generated.", code="no_preview", status_code=404)
-    return Response(t.preview_pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": "inline; filename=template-preview.pdf"})
+    return Response(
+        t.preview_pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=template-preview.pdf"},
+    )
 
 
 @router.post("/{tid}/default")
@@ -155,11 +180,15 @@ def import_profile(tid: int, user: User = Depends(current_user), db: Session = D
 @router.delete("/{tid}")
 def delete_template(tid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     t = _owned(db, user.id, tid)
-    in_use = db.scalar(select(ResumeVersion.id).where(ResumeVersion.template_id == t.id,
-                                                      ResumeVersion.is_base.is_(False)).limit(1))
+    in_use = db.scalar(
+        select(ResumeVersion.id).where(ResumeVersion.template_id == t.id, ResumeVersion.is_base.is_(False)).limit(1)
+    )
     if in_use:
-        raise AppError("Resume versions were generated from this template. Delete those versions first, or keep the "
-                       "template.", code="template_in_use", status_code=409)
+        raise AppError(
+            "Resume versions were generated from this template. Delete those versions first, or keep the template.",
+            code="template_in_use",
+            status_code=409,
+        )
     settings = db.get(UserSettings, user.id)
     if settings.default_template_id == t.id:
         settings.default_template_id = None

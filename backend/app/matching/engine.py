@@ -90,8 +90,9 @@ def build_index(p: ProfileSnapshot) -> dict[str, list[EvidenceRef]]:
     def add(key: str, ref: EvidenceRef):
         idx.setdefault(key, []).append(ref)
         for parent in implied_keys(key):
-            idx.setdefault(parent, []).append(EvidenceRef(ref.type, ref.id, ref.label, ref.status, ref.detail,
-                                                          via=display_name(key)))
+            idx.setdefault(parent, []).append(
+                EvidenceRef(ref.type, ref.id, ref.label, ref.status, ref.detail, via=display_name(key))
+            )
 
     for proj in p.projects:
         for canonical, status, label, detail in proj.evidence:
@@ -162,14 +163,26 @@ def _match_skill(r: RequirementInput, p: ProfileSnapshot, idx) -> MatchResult:
             related_names.append(display_name(rk))
     if listed:
         ev = [EvidenceRef("skill", p.skills[r.canonical], name, "user_provided", "listed in your skills")]
-        return MatchResult(r.id, "partial", f"{name} is listed in your skills, but no project or experience "
-                                            "demonstrates it yet.", ev + inferred[:3])
+        return MatchResult(
+            r.id,
+            "partial",
+            f"{name} is listed in your skills, but no project or experience demonstrates it yet.",
+            ev + inferred[:3],
+        )
     if inferred:
-        return MatchResult(r.id, "needs_verification", f"{name} may be used in {_names(inferred)}, but this was "
-                                                       "inferred - confirm it in the project library.", inferred[:4])
+        return MatchResult(
+            r.id,
+            "needs_verification",
+            f"{name} may be used in {_names(inferred)}, but this was inferred - confirm it in the project library.",
+            inferred[:4],
+        )
     if related:
-        return MatchResult(r.id, "partial", f"No direct {name} evidence; related experience: "
-                                            f"{', '.join(related_names[:4])}.", related[:4])
+        return MatchResult(
+            r.id,
+            "partial",
+            f"No direct {name} evidence; related experience: {', '.join(related_names[:4])}.",
+            related[:4],
+        )
     return MatchResult(r.id, "missing", f"No evidence of {name} in your profile or projects.", [])
 
 
@@ -186,8 +199,12 @@ def _match_experience(r: RequirementInput, p: ProfileSnapshot) -> MatchResult:
     if need == 0:
         return MatchResult(r.id, "strong", "The role is open to entry-level candidates.", [])
     if p.years_of_experience is None:
-        return MatchResult(r.id, "needs_verification", f"The posting asks for {r.label.lower()}. Add your years of "
-                                                       "experience to your profile to check this.", [])
+        return MatchResult(
+            r.id,
+            "needs_verification",
+            f"The posting asks for {r.label.lower()}. Add your years of experience to your profile to check this.",
+            [],
+        )
     have = float(p.years_of_experience)
     if have >= need:
         return MatchResult(r.id, "strong", f"You have {have:g} years; the posting asks for {need:g}+.", [])
@@ -199,8 +216,11 @@ _LEVELS = [
     (2, re.compile(r"master|m\.?\s?tech|m\.?\s?e\b|m\.?\s?sc|\bms\b|m\.s\.|mca|mba|postgraduate", re.I)),
     (1, re.compile(r"bachelor|b\.?\s?tech|b\.?\s?e\b|b\.?\s?sc|\bbs\b|b\.s\.|bca|undergraduate|graduat|degree", re.I)),
 ]
-_FIELD_RX = re.compile(r"computer science|computer engineering|information technology|software|\bcse\b|\bit\b|"
-                       r"electronics|data science|artificial intelligence|mathematics|engineering", re.I)
+_FIELD_RX = re.compile(
+    r"computer science|computer engineering|information technology|software|\bcse\b|\bit\b|"
+    r"electronics|data science|artificial intelligence|mathematics|engineering",
+    re.I,
+)
 
 
 def _level(text: str) -> int:
@@ -255,15 +275,36 @@ def _match_certification(r: RequirementInput, p: ProfileSnapshot) -> MatchResult
 
 
 def _cert_tokens(s: str) -> set[str]:
-    stop = {"certified", "certification", "certificate", "is", "a", "plus", "the", "or", "and", "any", "preferred",
-            "associate", "professional", "of", "in", "with", "–", "-"}
+    stop = {
+        "certified",
+        "certification",
+        "certificate",
+        "is",
+        "a",
+        "plus",
+        "the",
+        "or",
+        "and",
+        "any",
+        "preferred",
+        "associate",
+        "professional",
+        "of",
+        "in",
+        "with",
+        "–",
+        "-",
+    }
     return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if w not in stop and len(w) > 1}
 
 
 def _match_domain(r: RequirementInput, p: ProfileSnapshot) -> MatchResult:
     rx = re.compile(rf"\b{re.escape(r.label.lower())}\b", re.I)
-    hits = [EvidenceRef("project", pr.id, pr.title, "verified", "mentioned in the project description")
-            for pr in p.projects if rx.search(pr.description + " " + pr.readme[:3000])]
+    hits = [
+        EvidenceRef("project", pr.id, pr.title, "verified", "mentioned in the project description")
+        for pr in p.projects
+        if rx.search(pr.description + " " + pr.readme[:3000])
+    ]
     hits += [EvidenceRef("experience", e.id, e.label, "user_provided") for e in p.experiences if rx.search(e.text)]
     if hits:
         return MatchResult(r.id, "partial", f"{r.label} appears in {_names(hits)}.", hits[:3])
@@ -294,8 +335,15 @@ def score_projects(reqs: list[RequirementInput], p: ProfileSnapshot) -> list[Pro
             if via:
                 factor *= 0.6
             total += IMPORTANCE_WEIGHT[r.importance] * factor
-            matched.append({"requirement_id": r.id, "label": r.label, "importance": r.importance,
-                            "evidence_status": status, **({"via": via} if via else {})})
+            matched.append(
+                {
+                    "requirement_id": r.id,
+                    "label": r.label,
+                    "importance": r.importance,
+                    "evidence_status": status,
+                    **({"via": via} if via else {}),
+                }
+            )
         if not matched:
             continue
         if proj.pushed_at and (now - proj.pushed_at).days < 365:

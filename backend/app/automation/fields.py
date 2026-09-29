@@ -31,25 +31,58 @@ PATTERNS: list[tuple[str, re.Pattern]] = [
     ("school", re.compile(r"school|university|college|institution", re.I)),
     ("degree", re.compile(r"\bdegree\b|qualification", re.I)),
     ("discipline", re.compile(r"discipline|major|field of study|specialization|branch", re.I)),
-    ("graduation_year", re.compile(r"graduat\w*\s*(year|date)|year of (graduation|passing)|passing year|class of", re.I)),
+    (
+        "graduation_year",
+        re.compile(r"graduat\w*\s*(year|date)|year of (graduation|passing)|passing year|class of", re.I),
+    ),
     ("gpa", re.compile(r"\b(c?gpa|grade point|cpi|percentage|aggregate)\b", re.I)),
-    ("years_experience", re.compile(r"years? of (relevant |professional |work )?experience|how many years|"
-                                    r"total experience|experience \(years\)", re.I)),
+    (
+        "years_experience",
+        re.compile(
+            r"years? of (relevant |professional |work )?experience|how many years|"
+            r"total experience|experience \(years\)",
+            re.I,
+        ),
+    ),
     ("sponsorship", re.compile(r"sponsor|visa (support|status)|h-?1b", re.I)),
-    ("work_authorization", re.compile(r"(legally )?(authori[sz]ed|eligible|permitted|entitled) to work|work "
-                                      r"(authori[sz]ation|permit|eligibility)|right to work", re.I)),
+    (
+        "work_authorization",
+        re.compile(
+            r"(legally )?(authori[sz]ed|eligible|permitted|entitled) to work|work "
+            r"(authori[sz]ation|permit|eligibility)|right to work",
+            re.I,
+        ),
+    ),
     ("notice_period", re.compile(r"notice period|how soon can you (join|start)|joining time", re.I)),
-    ("start_date", re.compile(r"(earliest|available|availability|expected) (start|joining)|start date|when can you "
-                              r"start|date available", re.I)),
+    (
+        "start_date",
+        re.compile(
+            r"(earliest|available|availability|expected) (start|joining)|start date|when can you "
+            r"start|date available",
+            re.I,
+        ),
+    ),
     ("salary", re.compile(r"salary|compensation|ctc|pay expectation|expected pay|desired pay", re.I)),
     ("relocate", re.compile(r"relocat", re.I)),
-    ("location", re.compile(r"current (city|location)|^city$|^location$|where are you (located|based)|your location|"
-                            r"^address", re.I)),
+    (
+        "location",
+        re.compile(
+            r"current (city|location)|^city$|^location$|where are you (located|based)|your location|"
+            r"^address",
+            re.I,
+        ),
+    ),
     ("country", re.compile(r"^country|country of residence", re.I)),
     ("how_heard", re.compile(r"how did you (hear|find|learn)|where did you (hear|find)|source|referr?al source", re.I)),
     ("referral", re.compile(r"referred by|referrer|employee referral", re.I)),
-    ("why_company", re.compile(r"why (do you want|are you interested|this (company|role)|us|join|would you like)|"
-                               r"what interests you|motivat", re.I)),
+    (
+        "why_company",
+        re.compile(
+            r"why (do you want|are you interested|this (company|role)|us|join|would you like)|"
+            r"what interests you|motivat",
+            re.I,
+        ),
+    ),
     ("additional_info", re.compile(r"additional information|anything else|cover note|message to", re.I)),
 ]
 SENSITIVE: list[tuple[str, re.Pattern]] = [
@@ -63,8 +96,11 @@ SENSITIVE: list[tuple[str, re.Pattern]] = [
     ("criminal", re.compile(r"criminal|convict|felony|background check", re.I)),
     ("marital", re.compile(r"marital", re.I)),
 ]
-CONSENT = re.compile(r"i (agree|consent|acknowledge|certify|confirm|understand)|privacy (policy|notice)|terms (of|and)|"
-                     r"data (processing|protection)|gdpr|accurate (and|&) complete|by (checking|submitting)", re.I)
+CONSENT = re.compile(
+    r"i (agree|consent|acknowledge|certify|confirm|understand)|privacy (policy|notice)|terms (of|and)|"
+    r"data (processing|protection)|gdpr|accurate (and|&) complete|by (checking|submitting)",
+    re.I,
+)
 LEGAL_KEYS = {"work_authorization", "sponsorship"}
 FREE_TEXT_KEYS = {"why_company", "additional_info", "cover_letter"}
 
@@ -150,14 +186,32 @@ def map_field(f: FieldInput, ctx: dict) -> Mapped:
             if f.options:
                 value = pick_option(value, f.options) or ""
             if value:
-                return Mapped(key, value, "saved_answer", "needs_confirmation", True,
-                              "Self-identification question - confirm your saved answer for this application.")
-        return Mapped(key, "", "none", "needs_input", True,
-                      "Self-identification question - CareerPilot never answers this for you.")
+                return Mapped(
+                    key,
+                    value,
+                    "saved_answer",
+                    "needs_confirmation",
+                    True,
+                    "Self-identification question - confirm your saved answer for this application.",
+                )
+        return Mapped(
+            key,
+            "",
+            "none",
+            "needs_input",
+            True,
+            "Self-identification question - CareerPilot never answers this for you.",
+        )
 
     if key == "consent":
-        return Mapped("consent", "", "none", "needs_confirmation", False,
-                      "Read and accept this yourself; CareerPilot does not agree to terms on your behalf.")
+        return Mapped(
+            "consent",
+            "",
+            "none",
+            "needs_confirmation",
+            False,
+            "Read and accept this yourself; CareerPilot does not agree to terms on your behalf.",
+        )
 
     if key == "resume":
         rv = ctx.get("resume_version_id")
@@ -167,14 +221,27 @@ def map_field(f: FieldInput, ctx: dict) -> Mapped:
 
     value, source, status, note = "", "none", "needs_input", ""
     simple = {
-        "first_name": p.get("first_name"), "last_name": p.get("last_name"), "full_name": p.get("full_name"),
-        "preferred_name": p.get("first_name"), "email": p.get("email"), "phone": p.get("phone"),
-        "linkedin": p.get("linkedin_url"), "github": p.get("github_url"), "portfolio": p.get("portfolio_url"),
-        "location": p.get("location"), "school": p.get("school"), "degree": p.get("degree"),
-        "discipline": p.get("discipline"), "graduation_year": p.get("graduation_year"), "gpa": p.get("gpa"),
-        "notice_period": p.get("notice_period"), "salary": p.get("salary_expectation"),
-        "start_date": p.get("earliest_start_date"), "current_company": p.get("current_company"),
-        "current_title": p.get("current_title"), "country": p.get("country"),
+        "first_name": p.get("first_name"),
+        "last_name": p.get("last_name"),
+        "full_name": p.get("full_name"),
+        "preferred_name": p.get("first_name"),
+        "email": p.get("email"),
+        "phone": p.get("phone"),
+        "linkedin": p.get("linkedin_url"),
+        "github": p.get("github_url"),
+        "portfolio": p.get("portfolio_url"),
+        "location": p.get("location"),
+        "school": p.get("school"),
+        "degree": p.get("degree"),
+        "discipline": p.get("discipline"),
+        "graduation_year": p.get("graduation_year"),
+        "gpa": p.get("gpa"),
+        "notice_period": p.get("notice_period"),
+        "salary": p.get("salary_expectation"),
+        "start_date": p.get("earliest_start_date"),
+        "current_company": p.get("current_company"),
+        "current_title": p.get("current_title"),
+        "country": p.get("country"),
     }
     if key in simple and simple[key]:
         value, source, status = str(simple[key]), "profile", "filled"
@@ -208,9 +275,8 @@ def map_field(f: FieldInput, ctx: dict) -> Mapped:
             value, status = "", "needs_input"
         else:
             value = chosen
-    if f.input_type == "checkbox" and key not in ("relocate",):
-        if not value:
-            status = "needs_input"
+    if f.input_type == "checkbox" and key not in ("relocate",) and not value:
+        status = "needs_input"
     if not value and status == "filled":
         status = "needs_input"
     if not f.required and status == "needs_input" and not key:
@@ -238,7 +304,8 @@ def profile_context(profile, educations, experiences) -> dict:
         "notice_period": profile.notice_period if profile else "",
         "salary_expectation": profile.salary_expectation if profile else "",
         "earliest_start_date": profile.earliest_start_date if profile else "",
-        "years_of_experience": float(profile.years_of_experience) if profile and profile.years_of_experience is not None
+        "years_of_experience": float(profile.years_of_experience)
+        if profile and profile.years_of_experience is not None
         else None,
         "school": edu.institution if edu else "",
         "degree": edu.degree if edu else "",

@@ -51,8 +51,14 @@ def enhance_with_llm(provider: LLMProvider, text: str, analysis: JDAnalysis, met
                     cur.importance = importance
                 continue
             label = display_name(key) if not key.startswith("x:") else name
-            req = Requirement("skill", label, key, category_of(key) if not key.startswith("x:") else "other",
-                              importance, _snippet(text, name))
+            req = Requirement(
+                "skill",
+                label,
+                key,
+                category_of(key) if not key.startswith("x:") else "other",
+                importance,
+                _snippet(text, name),
+            )
             analysis.requirements.append(req)
             existing[key] = req
             added += 1
@@ -70,12 +76,17 @@ def enhance_with_llm(provider: LLMProvider, text: str, analysis: JDAnalysis, met
         et = str(data["employment_type"])
         if et.lower() in low:
             analysis.employment_type = et[:60]
-    if not analysis.workplace_type and data.get("workplace_type") in ("onsite", "hybrid", "remote"):
-        if data["workplace_type"] in low or (data["workplace_type"] == "onsite" and "on-site" in low):
-            analysis.workplace_type = data["workplace_type"]
+    wt = data.get("workplace_type")
+    if (
+        not analysis.workplace_type
+        and wt in ("onsite", "hybrid", "remote")
+        and (wt in low or (wt == "onsite" and "on-site" in low))
+    ):
+        analysis.workplace_type = wt
     if not analysis.responsibilities:
-        analysis.responsibilities = [str(r)[:300] for r in (data.get("responsibilities") or [])[:12]
-                                     if isinstance(r, str)]
+        analysis.responsibilities = [
+            str(r)[:300] for r in (data.get("responsibilities") or [])[:12] if isinstance(r, str)
+        ]
     quote = str(data.get("deadline_quote") or "").strip()
     if quote and not analysis.deadline and _normalize(quote) in _normalize(text):
         d = parse_explicit_date(quote)

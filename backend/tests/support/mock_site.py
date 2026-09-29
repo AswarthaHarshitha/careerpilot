@@ -49,11 +49,14 @@ JOB_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <footer>Local test fixture</footer></body></html>"""
 
 JOB_LD = {
-    "@context": "https://schema.org", "@type": "JobPosting", "title": "Software Engineer",
+    "@context": "https://schema.org",
+    "@type": "JobPosting",
+    "title": "Software Engineer",
     "hiringOrganization": {"@type": "Organization", "name": "IBM"},
     "identifier": {"@type": "PropertyValue", "value": "12345"},
     "jobLocation": {"@type": "Place", "address": {"addressLocality": "Bengaluru", "addressCountry": "IN"}},
-    "employmentType": "FULL_TIME", "datePosted": "2026-09-20",
+    "employmentType": "FULL_TIME",
+    "datePosted": "2026-09-20",
     "description": JOB_DESCRIPTION_HTML,
 }
 
@@ -128,15 +131,22 @@ REPOS = {
     "taskflow-api": {
         "description": "Task tracking REST API with role-based access control",
         "homepage": "",
-        "tree": [("README.md", 1200), ("backend/requirements.txt", 120), ("backend/app/main.py", 9000),
-                 ("backend/app/permissions.py", 2400), ("backend/Dockerfile", 300), ("backend/tests/test_api.py", 5000),
-                 ("backend/alembic.ini", 200), (".github/workflows/ci.yml", 400)],
+        "tree": [
+            ("README.md", 1200),
+            ("backend/requirements.txt", 120),
+            ("backend/app/main.py", 9000),
+            ("backend/app/permissions.py", 2400),
+            ("backend/Dockerfile", 300),
+            ("backend/tests/test_api.py", 5000),
+            ("backend/alembic.ini", 200),
+            (".github/workflows/ci.yml", 400),
+        ],
         "files": {
             "README.md": "# TaskFlow API\n\nTask tracking backend built with FastAPI and PostgreSQL.\n\n## Features\n"
-                         "- Role-based access control for admins, managers and members\n"
-                         "- JWT authentication with refresh tokens\n- Audit log of every task change\n",
+            "- Role-based access control for admins, managers and members\n"
+            "- JWT authentication with refresh tokens\n- Audit log of every task change\n",
             "backend/requirements.txt": "fastapi==0.115\nsqlalchemy==2.0\npsycopg[binary]==3.2\nalembic==1.14\n"
-                                        "pyjwt==2.10\npytest==8.3\n",
+            "pyjwt==2.10\npytest==8.3\n",
         },
     },
     "pixel-notes": {
@@ -145,8 +155,12 @@ REPOS = {
         "tree": [("README.md", 500), ("package.json", 400), ("src/App.tsx", 7000), ("vite.config.ts", 200)],
         "files": {
             "README.md": "# Pixel Notes\n\nA React and TypeScript note-taking app.\n",
-            "package.json": json.dumps({"dependencies": {"react": "^18.3.0", "react-dom": "^18.3.0"},
-                                        "devDependencies": {"typescript": "^5.6.0", "vite": "^5.4.0"}}),
+            "package.json": json.dumps(
+                {
+                    "dependencies": {"react": "^18.3.0", "react-dom": "^18.3.0"},
+                    "devDependencies": {"typescript": "^5.6.0", "vite": "^5.4.0"},
+                }
+            ),
         },
     },
 }
@@ -155,10 +169,22 @@ GH_USER = "fixture-user"
 
 def _repo_json(name: str) -> dict:
     r = REPOS[name]
-    return {"name": name, "full_name": f"{GH_USER}/{name}", "description": r["description"],
-            "html_url": f"https://github.com/{GH_USER}/{name}", "homepage": r["homepage"], "private": False,
-            "fork": False, "archived": False, "default_branch": "main", "pushed_at": "2026-09-01T10:00:00Z",
-            "stargazers_count": 0, "topics": [], "language": "Python", "owner": {"login": GH_USER}}
+    return {
+        "name": name,
+        "full_name": f"{GH_USER}/{name}",
+        "description": r["description"],
+        "html_url": f"https://github.com/{GH_USER}/{name}",
+        "homepage": r["homepage"],
+        "private": False,
+        "fork": False,
+        "archived": False,
+        "default_branch": "main",
+        "pushed_at": "2026-09-01T10:00:00Z",
+        "stargazers_count": 0,
+        "topics": [],
+        "language": "Python",
+        "owner": {"login": GH_USER},
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -214,8 +240,12 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, "not found")
 
     def _json(self, obj, status=200):
-        return self._send(status, json.dumps(obj), "application/json",
-                          {"x-ratelimit-remaining": "4999", "x-ratelimit-reset": "9999999999"})
+        return self._send(
+            status,
+            json.dumps(obj),
+            "application/json",
+            {"x-ratelimit-remaining": "4999", "x-ratelimit-reset": "9999999999"},
+        )
 
     def do_POST(self):  # noqa: N802
         if urlsplit(self.path).path != "/careers/ibm/apply/12345":
@@ -223,7 +253,8 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         msg = BytesParser(policy=email_policy).parsebytes(
-            b"Content-Type: " + self.headers.get("Content-Type", "").encode() + b"\r\n\r\n" + body)
+            b"Content-Type: " + self.headers.get("Content-Type", "").encode() + b"\r\n\r\n" + body
+        )
         fields, files = {}, {}
         for part in msg.iter_parts():
             name = part.get_param("name", header="content-disposition")
@@ -233,8 +264,11 @@ class Handler(BaseHTTPRequestHandler):
                 files[name] = {"filename": filename, "size": len(payload), "is_pdf": payload.startswith(b"%PDF")}
             else:
                 fields[name] = payload.decode(errors="replace")
-        missing = [k for k in ("first_name", "last_name", "email", "authorized", "sponsorship", "why", "consent")
-                   if not fields.get(k)]
+        missing = [
+            k
+            for k in ("first_name", "last_name", "email", "authorized", "sponsorship", "why", "consent")
+            if not fields.get(k)
+        ]
         if not files.get("resume", {}).get("size"):
             missing.append("resume")
         if missing:

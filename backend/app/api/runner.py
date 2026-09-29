@@ -20,10 +20,16 @@ def instructions(db: Session, s) -> dict:
     a = db.get(Application, s.application_id)
     job = db.get(Job, a.job_id)
     return {
-        "session_id": s.id, "state": s.state, "start_url": s.start_url, "platform": s.platform,
-        "company": job.company if job else "", "role_title": job.role_title if job else "",
-        "answers_revision": s.answers_revision, "fill": svc.fill_plan(db, s),
-        "submit": s.state == "submit_confirmed", "cancelled": s.state == "cancelled",
+        "session_id": s.id,
+        "state": s.state,
+        "start_url": s.start_url,
+        "platform": s.platform,
+        "company": job.company if job else "",
+        "role_title": job.role_title if job else "",
+        "answers_revision": s.answers_revision,
+        "fill": svc.fill_plan(db, s),
+        "submit": s.state == "submit_confirmed",
+        "cancelled": s.state == "cancelled",
         "terminal": s.state in AUTOMATION_TERMINAL,
         "unresolved": [f.label for f in svc.unresolved(a)],
     }
@@ -102,5 +108,6 @@ def resume_pdf(sid: int, runner=Depends(current_runner), db: Session = Depends(g
     from app.services.naming import resume_filename
 
     fname = resume_filename(db, rv, "pdf")
-    return Response(rv.pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+    return Response(
+        rv.pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )

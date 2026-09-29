@@ -11,16 +11,28 @@ from playwright.sync_api import Frame, Page
 from playwright.sync_api import TimeoutError as PWTimeout
 
 CAPTCHA_FRAME = re.compile(r"recaptcha|hcaptcha|turnstile|challenges\.cloudflare|arkoselabs|funcaptcha|captcha", re.I)
-CAPTCHA_TEXT = re.compile(r"verify (that )?you are (a )?human|are you a robot|complete the security check|"
-                          r"press (and|&) hold|checking your browser", re.I)
-APPLY_TEXT = re.compile(r"^\s*(apply|apply now|apply for (this )?(job|position|role)|apply to (this )?job|"
-                        r"start (your )?application|i'?m interested|apply manually)\s*$", re.I)
+CAPTCHA_TEXT = re.compile(
+    r"verify (that )?you are (a )?human|are you a robot|complete the security check|"
+    r"press (and|&) hold|checking your browser",
+    re.I,
+)
+APPLY_TEXT = re.compile(
+    r"^\s*(apply|apply now|apply for (this )?(job|position|role)|apply to (this )?job|"
+    r"start (your )?application|i'?m interested|apply manually)\s*$",
+    re.I,
+)
 NEXT_TEXT = re.compile(r"^\s*(next|continue|save (and|&) continue|proceed|next step|review)\s*[›>→]?\s*$", re.I)
-SUBMIT_TEXT = re.compile(r"^\s*(submit|submit (my |your )?application|send application|apply|finish|"
-                         r"complete application|submit and finish)\s*$", re.I)
-CONFIRM_TEXT = re.compile(r"thank you for (applying|your application|your interest)|application (has been |was )?"
-                          r"(received|submitted)|we('ve| have) received your application|successfully submitted|"
-                          r"your application is complete", re.I)
+SUBMIT_TEXT = re.compile(
+    r"^\s*(submit|submit (my |your )?application|send application|apply|finish|"
+    r"complete application|submit and finish)\s*$",
+    re.I,
+)
+CONFIRM_TEXT = re.compile(
+    r"thank you for (applying|your application|your interest)|application (has been |was )?"
+    r"(received|submitted)|we('ve| have) received your application|successfully submitted|"
+    r"your application is complete",
+    re.I,
+)
 CONFIRM_URL = re.compile(r"thank|confirm|success|submitted|complete", re.I)
 
 INSPECT_JS = r"""
@@ -156,8 +168,10 @@ def detect_obstacle(page: Page) -> str | None:
         try:
             pw = f.locator("input[type=password]")
             if pw.count() and pw.first.is_visible():
-                return ("Sign in (or create your account) on the employer's site in the browser window. "
-                        "CareerPilot never sees or stores your password and will continue once you are in.")
+                return (
+                    "Sign in (or create your account) on the employer's site in the browser window. "
+                    "CareerPilot never sees or stores your password and will continue once you are in."
+                )
         except Exception:  # noqa: BLE001
             continue
     return None
@@ -216,8 +230,15 @@ def _frame_for(page: Page, ref: str) -> tuple[Frame | None, str]:
     return (frames[i] if i < len(frames) else None), local
 
 
-def fill_field(page: Page, found: dict[str, FoundField], ref: str, action: str, value: str, input_type: str,
-               resume_path: str | None) -> tuple[bool, str]:
+def fill_field(
+    page: Page,
+    found: dict[str, FoundField],
+    ref: str,
+    action: str,
+    value: str,
+    input_type: str,
+    resume_path: str | None,
+) -> tuple[bool, str]:
     """Fills one field. Returns (ok, validation message)."""
     ff = found.get(ref)
     frame, local = _frame_for(page, ref)
@@ -307,5 +328,8 @@ def detect_confirmation(page: Page) -> tuple[bool, str]:
         except Exception:  # noqa: BLE001
             continue
     if CONFIRM_URL.search(page.url) and not validation_errors(page):
-        return False, f"The page moved to {page.url}, which looks like a confirmation, but no confirmation text was found."
+        return (
+            False,
+            f"The page moved to {page.url}, which looks like a confirmation, but no confirmation text was found.",
+        )
     return False, ""

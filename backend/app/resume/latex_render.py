@@ -86,9 +86,16 @@ def _section_item_separator(section: dict) -> str:
     return "\n"
 
 
-def render_latex(src: str, structure: dict, instructions: list[dict], *, header_links: dict | None = None,
-                 remove_sections: list[int] | None = None, section_titles: dict[int, str] | None = None,
-                 header_name: str | None = None) -> str:
+def render_latex(
+    src: str,
+    structure: dict,
+    instructions: list[dict],
+    *,
+    header_links: dict | None = None,
+    remove_sections: list[int] | None = None,
+    section_titles: dict[int, str] | None = None,
+    header_name: str | None = None,
+) -> str:
     """instructions: [{"index": section index, ...layout-specific content}]
     header_links: {"portfolio"|"github"|"linkedin": {"mode": "include"|"exclude", "url": str}}
     remove_sections: section indexes to drop entirely (command and content)."""
@@ -206,8 +213,8 @@ def header_link_edits(src: str, span: list[int], wanted: dict) -> list[tuple[int
         if mode == "exclude" and kind in present:
             s, e, _ = present[kind]
             i = next(n for n, lk in enumerate(links) if lk[0] == s)
-            left = src[links[i - 1][1]:s] if i > 0 else None
-            right = src[e:links[i + 1][0]] if i + 1 < len(links) else None
+            left = src[links[i - 1][1] : s] if i > 0 else None
+            right = src[e : links[i + 1][0]] if i + 1 < len(links) else None
             if left is not None and _SEP_ONLY.match(left):
                 reps.append((links[i - 1][1], e, ""))
             elif right is not None and _SEP_ONLY.match(right):
@@ -223,8 +230,11 @@ def header_link_edits(src: str, span: list[int], wanted: dict) -> list[tuple[int
             label = {"portfolio": "Portfolio", "github": "GitHub", "linkedin": "LinkedIn"}[kind]
             clone = _relabel(clone, label)
             last_s, last_e, _ = links[-1]
-            sep = src[links[-2][1]:links[-1][0]] if len(links) >= 2 and _SEP_ONLY.match(src[links[-2][1]:links[-1][0]]) \
+            sep = (
+                src[links[-2][1] : links[-1][0]]
+                if len(links) >= 2 and _SEP_ONLY.match(src[links[-2][1] : links[-1][0]])
                 else " $|$ "
+            )
             reps.append((last_e, last_e, sep + clone))
     return reps
 
@@ -237,11 +247,8 @@ def _relabel(href_call: str, label: str) -> str:
     head, body, tail = m.groups()
     inner = re.search(r"\\(?:underline|textit|textbf|emph|texttt)\{([^{}]*)\}\s*$", body)
     if inner:
-        body = body[: inner.start(1)] + escape(label) + body[inner.end(1):]
+        body = body[: inner.start(1)] + escape(label) + body[inner.end(1) :]
     else:
         run = re.search(r"([^\\{}\s][^\\{}]*)$", body)
-        if run:
-            body = body[: run.start(1)] + escape(label)
-        else:
-            body = body + " " + escape(label)
+        body = body[: run.start(1)] + escape(label) if run else body + " " + escape(label)
     return head + body + tail

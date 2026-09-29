@@ -20,44 +20,78 @@ router = APIRouter(prefix="/api/applications", tags=["applications"])
 def session_out(s) -> dict | None:
     if s is None:
         return None
-    return {"id": s.id, "state": s.state, "message": s.message, "current_url": s.current_url, "step": s.step,
-            "platform": s.platform, "has_screenshot": s.screenshot_png is not None, "log": s.log[-20:],
-            "answers_revision": s.answers_revision, "filled_revision": s.filled_revision,
-            "submit_confirmed_at": s.submit_confirmed_at.isoformat() if s.submit_confirmed_at else None,
-            "result_text": s.result_text, "resume_version_id": s.resume_version_id,
-            "last_heartbeat_at": s.last_heartbeat_at.isoformat() if s.last_heartbeat_at else None,
-            "created_at": s.created_at.isoformat()}
+    return {
+        "id": s.id,
+        "state": s.state,
+        "message": s.message,
+        "current_url": s.current_url,
+        "step": s.step,
+        "platform": s.platform,
+        "has_screenshot": s.screenshot_png is not None,
+        "log": s.log[-20:],
+        "answers_revision": s.answers_revision,
+        "filled_revision": s.filled_revision,
+        "submit_confirmed_at": s.submit_confirmed_at.isoformat() if s.submit_confirmed_at else None,
+        "result_text": s.result_text,
+        "resume_version_id": s.resume_version_id,
+        "last_heartbeat_at": s.last_heartbeat_at.isoformat() if s.last_heartbeat_at else None,
+        "created_at": s.created_at.isoformat(),
+    }
 
 
 def field_out(f) -> dict:
-    return {"id": f.id, "label": f.label, "input_type": f.input_type, "required": f.required, "options": f.options,
-            "field_key": f.field_key, "sensitive": f.sensitive, "value": f.value, "value_source": f.value_source,
-            "status": f.status, "note": f.note, "fill_result": f.fill_result, "validation_message":
-            f.validation_message, "step": f.step}
+    return {
+        "id": f.id,
+        "label": f.label,
+        "input_type": f.input_type,
+        "required": f.required,
+        "options": f.options,
+        "field_key": f.field_key,
+        "sensitive": f.sensitive,
+        "value": f.value,
+        "value_source": f.value_source,
+        "status": f.status,
+        "note": f.note,
+        "fill_result": f.fill_result,
+        "validation_message": f.validation_message,
+        "step": f.step,
+    }
 
 
 def app_out(db: Session, a: Application, job: Job | None, full: bool = False) -> dict:
     rv = db.get(ResumeVersion, a.resume_version_id) if a.resume_version_id else None
     out = {
-        "id": a.id, "status": a.status, "status_label": svc.STATUS_LABELS[a.status], "job_id": a.job_id,
-        "company": job.company if job else "", "role_title": job.role_title if job else "",
-        "job_code": job.job_code if job else "", "location": job.location if job else "",
-        "job_url": job.job_url if job else "", "application_url": job.application_url if job else "",
+        "id": a.id,
+        "status": a.status,
+        "status_label": svc.STATUS_LABELS[a.status],
+        "job_id": a.job_id,
+        "company": job.company if job else "",
+        "role_title": job.role_title if job else "",
+        "job_code": job.job_code if job else "",
+        "location": job.location if job else "",
+        "job_url": job.job_url if job else "",
+        "application_url": job.application_url if job else "",
         "deadline": job.deadline.isoformat() if job and job.deadline else None,
         "days_remaining": days_remaining(job.deadline) if job else None,
         "discovered_at": job.created_at.isoformat() if job else None,
         "date_applied": a.date_applied.isoformat() if a.date_applied else None,
         "follow_up_date": a.follow_up_date.isoformat() if a.follow_up_date else None,
         "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
-        "submission_verified": a.submission_verified, "notes": a.notes,
+        "submission_verified": a.submission_verified,
+        "notes": a.notes,
         "resume_version": {"id": rv.id, "label": rv.label, "version_number": rv.version_number} if rv else None,
         "updated_at": a.updated_at.isoformat(),
     }
     if full:
-        out["events"] = [{"id": e.id, "kind": e.kind, "message": e.message, "data": e.data,
-                          "created_at": e.created_at.isoformat()} for e in reversed(a.events)]
-        out["answers"] = [{"question": x.question, "answer": x.answer, "source": x.source, "confirmed": x.confirmed}
-                          for x in a.answers if x.confirmed]
+        out["events"] = [
+            {"id": e.id, "kind": e.kind, "message": e.message, "data": e.data, "created_at": e.created_at.isoformat()}
+            for e in reversed(a.events)
+        ]
+        out["answers"] = [
+            {"question": x.question, "answer": x.answer, "source": x.source, "confirmed": x.confirmed}
+            for x in a.answers
+            if x.confirmed
+        ]
         out["fields"] = [field_out(f) for f in a.fields]
         out["session"] = session_out(svc.latest_session(db, a.id))
         out["confirmation_text"] = a.confirmation_text
@@ -66,8 +100,9 @@ def app_out(db: Session, a: Application, job: Job | None, full: bool = False) ->
 
 @router.get("")
 def list_applications(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows = db.scalars(select(Application).where(Application.user_id == user.id)
-                      .order_by(Application.updated_at.desc())).all()
+    rows = db.scalars(
+        select(Application).where(Application.user_id == user.id).order_by(Application.updated_at.desc())
+    ).all()
     jobs = {j.id: j for j in db.scalars(select(Job).where(Job.user_id == user.id))}
     return [app_out(db, a, jobs.get(a.job_id)) for a in rows if not (jobs.get(a.job_id) and jobs[a.job_id].archived)]
 
@@ -142,8 +177,9 @@ class FieldPatch(BaseModel):
 
 
 @router.patch("/{app_id}/fields/{field_id}")
-def update_field(app_id: int, field_id: int, body: FieldPatch, user: User = Depends(current_user),
-                 db: Session = Depends(get_db)):
+def update_field(
+    app_id: int, field_id: int, body: FieldPatch, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     a = svc.get_application(db, user.id, app_id)
     svc.update_field(db, a, field_id, body.value, body.confirm, body.skip)
     return app_out(db, a, db.get(Job, a.job_id), full=True)
@@ -154,8 +190,9 @@ class ConfirmIn(BaseModel):
 
 
 @router.post("/{app_id}/automation/confirm-submit")
-def confirm_submit(app_id: int, body: ConfirmIn, request: Request, user: User = Depends(current_user),
-                   db: Session = Depends(get_db)):
+def confirm_submit(
+    app_id: int, body: ConfirmIn, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     a = svc.get_application(db, user.id, app_id)
     svc.confirm_submit(db, a, body.typed_confirmation, client_ip(request))
     return app_out(db, a, db.get(Job, a.job_id), full=True)

@@ -19,21 +19,68 @@ from app.resume.truth import NUMBER_RX
 
 # Inflated or generic phrasing that says nothing concrete. Detected, not swapped for synonyms.
 GENERIC_PHRASES = [
-    r"leverag(?:e|ed|ing) cutting[\s-]edge", r"cutting[\s-]edge", r"harness(?:ed|ing)? the power", r"spearhead(?:ed|ing)?",
-    r"passionate about", r"results[\s-]driven", r"proven track record", r"highly motivated", r"dynamic individual",
-    r"revolutioni[sz](?:e|ed|ing)", r"seamlessly integrat(?:e|ed|ing)", r"state[\s-]of[\s-]the[\s-]art",
-    r"demonstrated exceptional", r"played a pivotal role", r"pivotal", r"in today'?s (?:rapidly )?(?:evolving|fast)",
-    r"synergi[sz](?:e|ed|ing)", r"robust and scalable", r"go[\s-]getter", r"thought leader", r"best[\s-]in[\s-]class",
-    r"world[\s-]class", r"game[\s-]chang(?:er|ing)", r"innovative solution", r"transformative", r"utili[sz](?:e|ed|ing)",
-    r"worked extensively", r"various technologies", r"sophisticated", r"deep dive", r"hands[\s-]on experience with a "
-    r"wide range", r"team player", r"detail[\s-]oriented", r"self[\s-]starter", r"exceptional", r"extensive experience",
+    r"leverag(?:e|ed|ing) cutting[\s-]edge",
+    r"cutting[\s-]edge",
+    r"harness(?:ed|ing)? the power",
+    r"spearhead(?:ed|ing)?",
+    r"passionate about",
+    r"results[\s-]driven",
+    r"proven track record",
+    r"highly motivated",
+    r"dynamic individual",
+    r"revolutioni[sz](?:e|ed|ing)",
+    r"seamlessly integrat(?:e|ed|ing)",
+    r"state[\s-]of[\s-]the[\s-]art",
+    r"demonstrated exceptional",
+    r"played a pivotal role",
+    r"pivotal",
+    r"in today'?s (?:rapidly )?(?:evolving|fast)",
+    r"synergi[sz](?:e|ed|ing)",
+    r"robust and scalable",
+    r"go[\s-]getter",
+    r"thought leader",
+    r"best[\s-]in[\s-]class",
+    r"world[\s-]class",
+    r"game[\s-]chang(?:er|ing)",
+    r"innovative solution",
+    r"transformative",
+    r"utili[sz](?:e|ed|ing)",
+    r"worked extensively",
+    r"various technologies",
+    r"sophisticated",
+    r"deep dive",
+    r"hands[\s-]on experience with a "
+    r"wide range",
+    r"team player",
+    r"detail[\s-]oriented",
+    r"self[\s-]starter",
+    r"exceptional",
+    r"extensive experience",
 ]
 GENERIC_RX = re.compile(r"\b(?:" + "|".join(GENERIC_PHRASES) + r")\b", re.I)
 FIRST_PERSON = re.compile(r"\b(I|I'm|I've|me|my|we|our|us)\b")
-PRESENT_OPENERS = {"build", "develop", "design", "implement", "create", "manage", "lead", "maintain", "write", "test",
-                   "deploy", "analyze", "work", "use", "integrate", "optimize"}
-PLACEHOLDERS = re.compile(r"\bundefined\b|\bNaN\b|\b[Ll]orem ipsum\b|\bTODO\b|\bTBD\b|\bXXX+\b|\[[Ii]nsert[^\]]*\]|"
-                          r"\{\{[^}]*\}\}|\\[a-zA-Z]+\{|\?\?")
+PRESENT_OPENERS = {
+    "build",
+    "develop",
+    "design",
+    "implement",
+    "create",
+    "manage",
+    "lead",
+    "maintain",
+    "write",
+    "test",
+    "deploy",
+    "analyze",
+    "work",
+    "use",
+    "integrate",
+    "optimize",
+}
+PLACEHOLDERS = re.compile(
+    r"\bundefined\b|\bNaN\b|\b[Ll]orem ipsum\b|\bTODO\b|\bTBD\b|\bXXX+\b|\[[Ii]nsert[^\]]*\]|"
+    r"\{\{[^}]*\}\}|\\[a-zA-Z]+\{|\?\?"
+)
 PROFILE_ASSET_NAME = re.compile(r"\b(portfolio|personal (?:web)?site|github profile)\b", re.I)
 
 
@@ -97,10 +144,11 @@ def language_checks(content: dict, jd_text: str, sources: list[str]) -> list[Che
         person.review("Resume bullets should not use I / my / we.", fp)
     checks.append(person)
 
-    openers = Counter(b["text"].split()[0].lower().strip(",.") for b in bullets if b["text"].split())
+    prose = [b for b in bullets if not b.get("tech_line")]
+    openers = Counter(b["text"].split()[0].lower().strip(",.") for b in prose if b["text"].split())
     repeated = Check("repetition", "Repeated openings and phrases")
     rep = [f"“{w.capitalize()}” starts {n} bullets" for w, n in openers.items() if n >= 3]
-    tri = Counter(g for t in (b["text"] for b in bullets) for g in _ngrams(t, 4))
+    tri = Counter(g for t in (b["text"] for b in prose) for g in _ngrams(t, 4))
     rep += [f"“{' '.join(g)}” used {n} times" for g, n in tri.items() if n >= 3]
     if rep:
         repeated.review("Vary the openings; repetition reads as templated text.", rep)
@@ -117,8 +165,11 @@ def language_checks(content: dict, jd_text: str, sources: list[str]) -> list[Che
     for t in texts:
         for m in find_skills(t, include_weak=False):
             seen.setdefault(m.key, set()).add(t[m.start : m.end])
-    incons = [f"{display_name(k)}: {', '.join(sorted(v))}" for k, v in seen.items()
-              if len({re.sub(r'[^a-z0-9]', '', x.lower()).rstrip('s') for x in v}) > 1 and k in SKILLS]
+    incons = [
+        f"{display_name(k)}: {', '.join(sorted(v))}"
+        for k, v in seen.items()
+        if len({re.sub(r"[^a-z0-9]", "", x.lower()).rstrip("s") for x in v}) > 1 and k in SKILLS
+    ]
     if incons:
         names.review("The same technology is spelled differently.", incons)
     checks.append(names)
@@ -147,8 +198,9 @@ def language_checks(content: dict, jd_text: str, sources: list[str]) -> list[Che
     return checks
 
 
-def evidence_checks(content: dict, eligible_projects: dict[int, dict], allowed_skill_text: set[str],
-                    strong_keys: set[str]) -> list[Check]:
+def evidence_checks(
+    content: dict, eligible_projects: dict[int, dict], allowed_skill_text: set[str], strong_keys: set[str]
+) -> list[Check]:
     """eligible_projects: project id -> {"title", "eligible": bool, "asset_type"}"""
     checks = []
     portfolio = Check("portfolio_project", "Portfolio is not listed as a project")
@@ -199,8 +251,9 @@ def evidence_checks(content: dict, eligible_projects: dict[int, dict], allowed_s
     return checks
 
 
-def instruction_checks(cfg: dict, content: dict, rendered_source: str | None, page_count: int | None,
-                       header_urls: dict[str, str]) -> list[Check]:
+def instruction_checks(
+    cfg: dict, content: dict, rendered_source: str | None, page_count: int | None, header_urls: dict[str, str]
+) -> list[Check]:
     c = Check("instructions", "Job-specific instructions applied")
     problems = []
     if rendered_source is not None:
@@ -219,8 +272,10 @@ def instruction_checks(cfg: dict, content: dict, rendered_source: str | None, pa
     if proj and cfg.get("projects_explicit") and len(proj.get("entries") or []) > cfg["projects"]:
         problems.append(f"{len(proj['entries'])} projects listed; {cfg['projects']} requested")
     if proj and cfg.get("project_priority"):
-        names = [e.get("fields", {}).get("short_name") or e.get("fields", {}).get("primary", "")
-                 for e in proj.get("entries") or []]
+        names = [
+            e.get("fields", {}).get("short_name") or e.get("fields", {}).get("primary", "")
+            for e in proj.get("entries") or []
+        ]
         want = [n.lower() for n in cfg["project_priority"]]
         got = [n.lower() for n in names if any(w in n.lower() for w in want)]
         if got and [w for w in want if any(w in g for g in got)] != [next(w for w in want if w in g) for g in got]:
@@ -228,8 +283,10 @@ def instruction_checks(cfg: dict, content: dict, rendered_source: str | None, pa
     if problems:
         c.fail("Some instructions were not satisfied.", problems)
     if cfg.get("conflicts"):
-        c.review(f"{len(cfg['conflicts'])} instruction(s) were not applied because they conflict with verified "
-                 "evidence.", [x["instruction"] for x in cfg["conflicts"]])
+        c.review(
+            f"{len(cfg['conflicts'])} instruction(s) were not applied because they conflict with verified evidence.",
+            [x["instruction"] for x in cfg["conflicts"]],
+        )
     length = Check("length", "Resume length")
     if page_count and page_count > cfg.get("length", 99):
         length.fail(f"The resume is {page_count} pages; the target is {cfg['length']}.")

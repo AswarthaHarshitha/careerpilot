@@ -61,14 +61,25 @@ class ProfileIn(BaseModel):
 
 def profile_out(p: UserProfile) -> dict:
     return {
-        "full_name": p.full_name, "first_name": p.first_name, "last_name": p.last_name, "email": p.email,
-        "phone": p.phone, "location": p.location, "linkedin_url": p.linkedin_url, "github_url": p.github_url,
-        "portfolio_url": p.portfolio_url, "headline": p.headline, "summary": p.summary,
-        "work_authorization": p.work_authorization, "requires_sponsorship": p.requires_sponsorship,
-        "willing_to_relocate": p.willing_to_relocate, "notice_period": p.notice_period,
+        "full_name": p.full_name,
+        "first_name": p.first_name,
+        "last_name": p.last_name,
+        "email": p.email,
+        "phone": p.phone,
+        "location": p.location,
+        "linkedin_url": p.linkedin_url,
+        "github_url": p.github_url,
+        "portfolio_url": p.portfolio_url,
+        "headline": p.headline,
+        "summary": p.summary,
+        "work_authorization": p.work_authorization,
+        "requires_sponsorship": p.requires_sponsorship,
+        "willing_to_relocate": p.willing_to_relocate,
+        "notice_period": p.notice_period,
         "salary_expectation": p.salary_expectation,
         "years_of_experience": float(p.years_of_experience) if p.years_of_experience is not None else None,
-        "earliest_start_date": p.earliest_start_date, "preferred_locations": p.preferred_locations or [],
+        "earliest_start_date": p.earliest_start_date,
+        "preferred_locations": p.preferred_locations or [],
         "preferred_job_types": p.preferred_job_types or [],
     }
 
@@ -77,29 +88,63 @@ def profile_out(p: UserProfile) -> dict:
 def get_profile(user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = get_or_create_profile(db, user.id)
     db.commit()
-    exps = db.scalars(select(Experience).where(Experience.user_id == user.id).options(selectinload(Experience.bullets))
-                      .order_by(Experience.sort_order, Experience.id)).all()
+    exps = db.scalars(
+        select(Experience)
+        .where(Experience.user_id == user.id)
+        .options(selectinload(Experience.bullets))
+        .order_by(Experience.sort_order, Experience.id)
+    ).all()
     return {
         "personal": profile_out(p),
         "experiences": [exp_out(e) for e in exps],
-        "educations": [edu_out(e) for e in db.scalars(select(Education).where(Education.user_id == user.id)
-                                                      .order_by(Education.sort_order, Education.id))],
-        "skills": [skill_out(s) for s in db.scalars(select(Skill).where(Skill.user_id == user.id)
-                                                    .order_by(Skill.category, Skill.sort_order, Skill.id))],
-        "certifications": [cert_out(c) for c in db.scalars(select(Certification).where(Certification.user_id == user.id)
-                                                           .order_by(Certification.sort_order, Certification.id))],
-        "achievements": [{"id": a.id, "text": a.text} for a in db.scalars(
-            select(Achievement).where(Achievement.user_id == user.id).order_by(Achievement.sort_order, Achievement.id))],
-        "answers": [answer_out(a) for a in db.scalars(select(ProfileAnswer).where(ProfileAnswer.user_id == user.id)
-                                                      .order_by(ProfileAnswer.question_key))],
+        "educations": [
+            edu_out(e)
+            for e in db.scalars(
+                select(Education).where(Education.user_id == user.id).order_by(Education.sort_order, Education.id)
+            )
+        ],
+        "skills": [
+            skill_out(s)
+            for s in db.scalars(
+                select(Skill).where(Skill.user_id == user.id).order_by(Skill.category, Skill.sort_order, Skill.id)
+            )
+        ],
+        "certifications": [
+            cert_out(c)
+            for c in db.scalars(
+                select(Certification)
+                .where(Certification.user_id == user.id)
+                .order_by(Certification.sort_order, Certification.id)
+            )
+        ],
+        "achievements": [
+            {"id": a.id, "text": a.text}
+            for a in db.scalars(
+                select(Achievement)
+                .where(Achievement.user_id == user.id)
+                .order_by(Achievement.sort_order, Achievement.id)
+            )
+        ],
+        "answers": [
+            answer_out(a)
+            for a in db.scalars(
+                select(ProfileAnswer).where(ProfileAnswer.user_id == user.id).order_by(ProfileAnswer.question_key)
+            )
+        ],
         "completeness": completeness(db, user.id, p),
     }
 
 
 def completeness(db: Session, user_id: int, p: UserProfile) -> dict:
     missing = []
-    for attr, label in (("full_name", "Full name"), ("email", "Email"), ("phone", "Phone"), ("location", "Location"),
-                        ("linkedin_url", "LinkedIn"), ("github_url", "GitHub")):
+    for attr, label in (
+        ("full_name", "Full name"),
+        ("email", "Email"),
+        ("phone", "Phone"),
+        ("location", "Location"),
+        ("linkedin_url", "LinkedIn"),
+        ("github_url", "GitHub"),
+    ):
         if not getattr(p, attr):
             missing.append(label)
     if p.years_of_experience is None:
@@ -131,6 +176,7 @@ def update_profile(body: ProfileIn, user: User = Depends(current_user), db: Sess
 
 # --- experience -----------------------------------------------------------------------------------
 
+
 class ExperienceIn(BaseModel):
     organization: str = Field(min_length=1, max_length=200)
     title: str = Field(default="", max_length=200)
@@ -144,9 +190,18 @@ class ExperienceIn(BaseModel):
 
 
 def exp_out(e: Experience) -> dict:
-    return {"id": e.id, "organization": e.organization, "title": e.title, "location": e.location,
-            "employment_type": e.employment_type, "start_date": e.start_date, "end_date": e.end_date,
-            "is_current": e.is_current, "sort_order": e.sort_order, "bullets": [b.text for b in e.bullets]}
+    return {
+        "id": e.id,
+        "organization": e.organization,
+        "title": e.title,
+        "location": e.location,
+        "employment_type": e.employment_type,
+        "start_date": e.start_date,
+        "end_date": e.end_date,
+        "is_current": e.is_current,
+        "sort_order": e.sort_order,
+        "bullets": [b.text for b in e.bullets],
+    }
 
 
 def _owned(db: Session, model, user_id: int, obj_id: int, what: str):
@@ -166,15 +221,17 @@ def add_experience(body: ExperienceIn, user: User = Depends(current_user), db: S
 
 
 @router.put("/experiences/{exp_id}")
-def update_experience(exp_id: int, body: ExperienceIn, user: User = Depends(current_user),
-                      db: Session = Depends(get_db)):
+def update_experience(
+    exp_id: int, body: ExperienceIn, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     e = _owned(db, Experience, user.id, exp_id, "Experience")
     for k, v in body.model_dump(exclude={"bullets"}).items():
         setattr(e, k, v)
     e.bullets.clear()
     db.flush()
-    e.bullets.extend(ExperienceBullet(text=b.strip()[:600], sort_order=i) for i, b in enumerate(body.bullets)
-                     if b.strip())
+    e.bullets.extend(
+        ExperienceBullet(text=b.strip()[:600], sort_order=i) for i, b in enumerate(body.bullets) if b.strip()
+    )
     db.commit()
     return exp_out(e)
 
@@ -187,6 +244,7 @@ def delete_experience(exp_id: int, user: User = Depends(current_user), db: Sessi
 
 
 # --- education ------------------------------------------------------------------------------------
+
 
 class EducationIn(BaseModel):
     institution: str = Field(min_length=1, max_length=200)
@@ -201,9 +259,18 @@ class EducationIn(BaseModel):
 
 
 def edu_out(e: Education) -> dict:
-    return {"id": e.id, "institution": e.institution, "degree": e.degree, "field_of_study": e.field_of_study,
-            "start_date": e.start_date, "end_date": e.end_date, "graduation_year": e.graduation_year, "grade": e.grade,
-            "location": e.location, "sort_order": e.sort_order}
+    return {
+        "id": e.id,
+        "institution": e.institution,
+        "degree": e.degree,
+        "field_of_study": e.field_of_study,
+        "start_date": e.start_date,
+        "end_date": e.end_date,
+        "graduation_year": e.graduation_year,
+        "grade": e.grade,
+        "location": e.location,
+        "sort_order": e.sort_order,
+    }
 
 
 @router.post("/educations")
@@ -232,14 +299,21 @@ def delete_education(edu_id: int, user: User = Depends(current_user), db: Sessio
 
 # --- skills ---------------------------------------------------------------------------------------
 
+
 class SkillIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     category: str = Field(default="", max_length=80)
 
 
 def skill_out(s: Skill) -> dict:
-    return {"id": s.id, "name": s.name, "canonical": s.canonical, "category": s.category,
-            "known": not s.canonical.startswith("x:"), "taxonomy_name": display_name(s.canonical)}
+    return {
+        "id": s.id,
+        "name": s.name,
+        "canonical": s.canonical,
+        "category": s.category,
+        "known": not s.canonical.startswith("x:"),
+        "taxonomy_name": display_name(s.canonical),
+    }
 
 
 @router.post("/skills")
@@ -273,6 +347,7 @@ def delete_skill(skill_id: int, user: User = Depends(current_user), db: Session 
 
 
 # --- certifications & achievements ----------------------------------------------------------------
+
 
 class CertificationIn(BaseModel):
     name: str = Field(min_length=1, max_length=300)
@@ -324,7 +399,9 @@ def add_achievement(body: AchievementIn, user: User = Depends(current_user), db:
 
 
 @router.put("/achievements/{aid}")
-def update_achievement(aid: int, body: AchievementIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def update_achievement(
+    aid: int, body: AchievementIn, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     a = _owned(db, Achievement, user.id, aid, "Achievement")
     a.text = body.text.strip()
     db.commit()
@@ -340,8 +417,19 @@ def delete_achievement(aid: int, user: User = Depends(current_user), db: Session
 
 # --- saved application answers --------------------------------------------------------------------
 
-ANSWER_KEYS = Literal["how_heard", "referral", "why_company", "additional_info", "gender", "race", "veteran",
-                      "disability", "sexual_orientation", "country", "custom"]
+ANSWER_KEYS = Literal[
+    "how_heard",
+    "referral",
+    "why_company",
+    "additional_info",
+    "gender",
+    "race",
+    "veteran",
+    "disability",
+    "sexual_orientation",
+    "country",
+    "custom",
+]
 SENSITIVE_KEYS = {"gender", "race", "veteran", "disability", "sexual_orientation"}
 
 
@@ -357,8 +445,9 @@ def answer_out(a: ProfileAnswer) -> dict:
 
 @router.put("/answers")
 def upsert_answer(body: AnswerIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    a = db.scalar(select(ProfileAnswer).where(ProfileAnswer.user_id == user.id,
-                                              ProfileAnswer.question_key == body.question_key))
+    a = db.scalar(
+        select(ProfileAnswer).where(ProfileAnswer.user_id == user.id, ProfileAnswer.question_key == body.question_key)
+    )
     if a is None:
         a = ProfileAnswer(user_id=user.id, question_key=body.question_key)
         db.add(a)

@@ -12,8 +12,21 @@ import re
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 BLOCK_TAGS = {"p", "div", "section", "article", "ul", "ol", "table", "tr", "br", "header", "footer", "main"}
-DROP_TAGS = ["script", "style", "noscript", "svg", "nav", "iframe", "form", "button", "img", "picture", "video",
-             "template", "canvas"]
+DROP_TAGS = [
+    "script",
+    "style",
+    "noscript",
+    "svg",
+    "nav",
+    "iframe",
+    "form",
+    "button",
+    "img",
+    "picture",
+    "video",
+    "template",
+    "canvas",
+]
 
 
 def html_to_text(fragment: str) -> str:

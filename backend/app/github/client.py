@@ -71,8 +71,12 @@ class GitHubClient:
         if self.remaining is not None and self.remaining <= 1:
             raise RateLimited(self.reset_at)
         try:
-            res = fetch(self.api + path, headers=self._headers(), accept="application/vnd.github+json",
-                        allow_status=(200, 403, 404, 409, 429))
+            res = fetch(
+                self.api + path,
+                headers=self._headers(),
+                accept="application/vnd.github+json",
+                allow_status=(200, 403, 404, 409, 429),
+            )
         except ExternalFetchError as exc:
             raise ExternalFetchError(f"GitHub could not be reached: {exc.message}") from exc
         rem = res.headers.get("x-ratelimit-remaining")
@@ -104,8 +108,9 @@ class GitHubClient:
             data = self._api_json(path)
             if data is None:
                 if page == 1:
-                    raise AppError(f"GitHub user '{username}' was not found.", code="github_user_not_found",
-                                   status_code=404)
+                    raise AppError(
+                        f"GitHub user '{username}' was not found.", code="github_user_not_found", status_code=404
+                    )
                 break
             for r in data:
                 if include_private and self.token and r.get("owner", {}).get("login", "").lower() != username.lower():
@@ -123,7 +128,9 @@ class GitHubClient:
         data = self._api_json(f"/repos/{full_name}/git/trees/{quote(branch, safe='')}?recursive=1")
         if not data:
             return [], False
-        entries = [TreeEntry(t["path"], int(t.get("size") or 0)) for t in data.get("tree", []) if t.get("type") == "blob"]
+        entries = [
+            TreeEntry(t["path"], int(t.get("size") or 0)) for t in data.get("tree", []) if t.get("type") == "blob"
+        ]
         return entries, bool(data.get("truncated"))
 
     def raw_file(self, full_name: str, branch: str, path: str, max_bytes: int = 400_000) -> str | None:
@@ -163,7 +170,9 @@ def _repo_info(r: dict) -> RepoInfo:
 
 
 GITHUB_PROFILE_RX = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]{1,39})/?$")
-REPO_URL_RX = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?$")
+REPO_URL_RX = re.compile(
+    r"^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?$"
+)
 
 
 def parse_username(value: str) -> str:
@@ -173,8 +182,9 @@ def parse_username(value: str) -> str:
         return m.group(1)
     if re.fullmatch(r"[A-Za-z0-9-]{1,39}", value):
         return value
-    raise AppError("Enter a GitHub username or profile URL such as https://github.com/octocat.",
-                   code="invalid_github_username")
+    raise AppError(
+        "Enter a GitHub username or profile URL such as https://github.com/octocat.", code="invalid_github_username"
+    )
 
 
 def parse_repo_url(value: str) -> str:

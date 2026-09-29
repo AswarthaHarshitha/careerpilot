@@ -38,9 +38,17 @@ from app.models import (
 
 log = logging.getLogger(__name__)
 STATUS_LABELS = {
-    "saved": "Saved", "analyzing": "Analyzing", "resume_ready": "Resume Ready", "ready_to_apply": "Ready to Apply",
-    "in_progress": "Application In Progress", "submitted": "Submitted", "assessment": "Assessment",
-    "interview": "Interview", "rejected": "Rejected", "withdrawn": "Withdrawn", "offer": "Offer",
+    "saved": "Saved",
+    "analyzing": "Analyzing",
+    "resume_ready": "Resume Ready",
+    "ready_to_apply": "Ready to Apply",
+    "in_progress": "Application In Progress",
+    "submitted": "Submitted",
+    "assessment": "Assessment",
+    "interview": "Interview",
+    "rejected": "Rejected",
+    "withdrawn": "Withdrawn",
+    "offer": "Offer",
 }
 
 
@@ -69,17 +77,31 @@ def set_status(db: Session, a: Application, status: str, note: str = "", *, veri
         if a.follow_up_date is None:
             a.follow_up_date = date.today() + timedelta(days=days)
         job = db.get(Job, a.job_id)
-        db.execute(delete(Reminder).where(Reminder.job_id == a.job_id, Reminder.kind == "deadline",
-                                          Reminder.done_at.is_(None)))
-        db.add(Reminder(user_id=a.user_id, application_id=a.id, kind="follow_up", due_date=a.follow_up_date,
-                        message=f"Follow up on your {job.role_title if job else ''} application at "
-                                f"{job.company if job else ''}.".replace("  ", " ")))
-    db.add(ApplicationEvent(application_id=a.id, kind="status",
-                            message=note or f"{STATUS_LABELS.get(prev, prev)} → {STATUS_LABELS[status]}",
-                            data={"from": prev, "to": status}))
+        db.execute(
+            delete(Reminder).where(Reminder.job_id == a.job_id, Reminder.kind == "deadline", Reminder.done_at.is_(None))
+        )
+        db.add(
+            Reminder(
+                user_id=a.user_id,
+                application_id=a.id,
+                kind="follow_up",
+                due_date=a.follow_up_date,
+                message=f"Follow up on your {job.role_title if job else ''} application at "
+                f"{job.company if job else ''}.".replace("  ", " "),
+            )
+        )
+    db.add(
+        ApplicationEvent(
+            application_id=a.id,
+            kind="status",
+            message=note or f"{STATUS_LABELS.get(prev, prev)} → {STATUS_LABELS[status]}",
+            data={"from": prev, "to": status},
+        )
+    )
 
 
 # --- automation sessions --------------------------------------------------------------------------
+
 
 def start_session(db: Session, a: Application, resume_version_id: int | None) -> AutomationSession:
     job = db.get(Job, a.job_id)
@@ -92,44 +114,76 @@ def start_session(db: Session, a: Application, resume_version_id: int | None) ->
         if rv is None or rv.user_id != a.user_id or rv.pdf is None:
             raise AppError("Choose a resume version that has a PDF.", code="invalid_resume")
         if rv.export_blocked:
-            raise AppError("That resume version has failing checks. Fix them on the resume page first.",
-                           code="export_blocked", status_code=409)
+            raise AppError(
+                "That resume version has failing checks. Fix them on the resume page first.",
+                code="export_blocked",
+                status_code=409,
+            )
     else:
         raise AppError("Generate a resume for this job first.", code="no_resume", actions=["generate_resume"])
-    active = db.scalar(select(AutomationSession).where(AutomationSession.application_id == a.id,
-                                                       AutomationSession.state.notin_(AUTOMATION_TERMINAL)))
+    active = db.scalar(
+        select(AutomationSession).where(
+            AutomationSession.application_id == a.id, AutomationSession.state.notin_(AUTOMATION_TERMINAL)
+        )
+    )
     if active:
         raise Conflict("An application session is already open for this job.", code="session_active")
-    s = AutomationSession(user_id=a.user_id, application_id=a.id, resume_version_id=rv_id, start_url=url,
-                          platform=job.source_platform if job else "", state="queued",
-                          message="Waiting for the CareerPilot apply agent on your computer to pick this up.")
+    s = AutomationSession(
+        user_id=a.user_id,
+        application_id=a.id,
+        resume_version_id=rv_id,
+        start_url=url,
+        platform=job.source_platform if job else "",
+        state="queued",
+        message="Waiting for the CareerPilot apply agent on your computer to pick this up.",
+    )
     db.add(s)
     a.resume_version_id = rv_id
     db.execute(delete(ApplicationField).where(ApplicationField.application_id == a.id))
     if a.status in ("saved", "resume_ready", "ready_to_apply"):
         set_status(db, a, "in_progress", "Application started")
-    db.add(ApplicationEvent(application_id=a.id, kind="automation", message="Assisted application requested",
-                            data={"resume_version_id": rv_id}))
+    db.add(
+        ApplicationEvent(
+            application_id=a.id,
+            kind="automation",
+            message="Assisted application requested",
+            data={"resume_version_id": rv_id},
+        )
+    )
     db.commit()
     return s
 
 
 def latest_session(db: Session, app_id: int) -> AutomationSession | None:
-    return db.scalar(select(AutomationSession).where(AutomationSession.application_id == app_id)
-                     .order_by(AutomationSession.id.desc()).limit(1))
+    return db.scalar(
+        select(AutomationSession)
+        .where(AutomationSession.application_id == app_id)
+        .order_by(AutomationSession.id.desc())
+        .limit(1)
+    )
 
 
 def claim_session(db: Session, user_id: int, token_id: int) -> AutomationSession | None:
     stale = datetime.now(UTC) - timedelta(minutes=2)
-    s = db.scalar(select(AutomationSession).where(AutomationSession.user_id == user_id,
-                                                  AutomationSession.state == "queued")
-                  .order_by(AutomationSession.id).limit(1))
+    s = db.scalar(
+        select(AutomationSession)
+        .where(AutomationSession.user_id == user_id, AutomationSession.state == "queued")
+        .order_by(AutomationSession.id)
+        .limit(1)
+    )
     if s is None:
         # a session whose runner vanished (no heartbeat) can be picked up again
-        s = db.scalar(select(AutomationSession).where(
-            AutomationSession.user_id == user_id, AutomationSession.state.notin_(AUTOMATION_TERMINAL),
-            AutomationSession.state != "queued", AutomationSession.last_heartbeat_at < stale)
-            .order_by(AutomationSession.id).limit(1))
+        s = db.scalar(
+            select(AutomationSession)
+            .where(
+                AutomationSession.user_id == user_id,
+                AutomationSession.state.notin_(AUTOMATION_TERMINAL),
+                AutomationSession.state != "queued",
+                AutomationSession.last_heartbeat_at < stale,
+            )
+            .order_by(AutomationSession.id)
+            .limit(1)
+        )
         if s is None:
             return None
     s.runner_token_id = token_id
@@ -169,12 +223,18 @@ def _draft_fn(db: Session, a: Application):
     }
 
     def draft(question: str) -> str:
-        system = ("Draft a concise, sincere answer (80-150 words) to a job application question, in first person, "
-                  "using only the candidate facts given. Do not invent experience, numbers, or feelings about "
-                  "specific people. Return JSON {\"answer\": \"...\"}.")
-        prompt = (f"Company: {job.company if job else ''}\nRole: {job.role_title if job else ''}\n"
-                  f"Candidate facts: {facts}\n\n" + wrap_untrusted("QUESTION", question, 600) + "\n\n"
-                  + wrap_untrusted("JOB DESCRIPTION", (job.description_text if job else "")[:6000], 6000))
+        system = (
+            "Draft a concise, sincere answer (80-150 words) to a job application question, in first person, "
+            "using only the candidate facts given. Do not invent experience, numbers, or feelings about "
+            'specific people. Return JSON {"answer": "..."}.'
+        )
+        prompt = (
+            f"Company: {job.company if job else ''}\nRole: {job.role_title if job else ''}\n"
+            f"Candidate facts: {facts}\n\n"
+            + wrap_untrusted("QUESTION", question, 600)
+            + "\n\n"
+            + wrap_untrusted("JOB DESCRIPTION", (job.description_text if job else "")[:6000], 6000)
+        )
         try:
             data = provider.complete_json(system, prompt, max_tokens=600, temperature=0.4)
         except LLMError:
@@ -189,25 +249,38 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
     """Stores fields the runner found on the current form step and maps each to a proposed value."""
     a = db.get(Application, s.application_id)
     profile = db.scalar(select(UserProfile).where(UserProfile.user_id == a.user_id))
-    educations = db.scalars(select(Education).where(Education.user_id == a.user_id)
-                            .order_by(Education.sort_order)).all()
-    experiences = db.scalars(select(Experience).where(Experience.user_id == a.user_id)
-                             .order_by(Experience.sort_order)).all()
-    saved = {pa.question_key: (pa.answer, pa.sensitive)
-             for pa in db.scalars(select(ProfileAnswer).where(ProfileAnswer.user_id == a.user_id))}
+    educations = db.scalars(
+        select(Education).where(Education.user_id == a.user_id).order_by(Education.sort_order)
+    ).all()
+    experiences = db.scalars(
+        select(Experience).where(Experience.user_id == a.user_id).order_by(Experience.sort_order)
+    ).all()
+    saved = {
+        pa.question_key: (pa.answer, pa.sensitive)
+        for pa in db.scalars(select(ProfileAnswer).where(ProfileAnswer.user_id == a.user_id))
+    }
     rv = db.get(ResumeVersion, s.resume_version_id) if s.resume_version_id else None
-    ctx = {"profile": profile_context(profile, educations, experiences), "saved_answers": saved,
-           "resume_version_id": s.resume_version_id, "resume_label": rv.label if rv else "",
-           "draft_fn": _draft_fn(db, a)}
+    ctx = {
+        "profile": profile_context(profile, educations, experiences),
+        "saved_answers": saved,
+        "resume_version_id": s.resume_version_id,
+        "resume_label": rv.label if rv else "",
+        "draft_fn": _draft_fn(db, a),
+    }
     existing = {f.field_ref: f for f in a.fields}
     pos = max([f.position for f in a.fields], default=-1) + 1
     for raw in fields[:200]:
         ref = str(raw.get("field_ref", ""))[:300]
         if not ref:
             continue
-        fi = FieldInput(field_ref=ref, label=str(raw.get("label", ""))[:1000] or "(unlabelled field)",
-                        input_type=str(raw.get("input_type", "text"))[:30], required=bool(raw.get("required")),
-                        options=[str(o)[:200] for o in (raw.get("options") or [])][:200], step=int(raw.get("step", 0)))
+        fi = FieldInput(
+            field_ref=ref,
+            label=str(raw.get("label", ""))[:1000] or "(unlabelled field)",
+            input_type=str(raw.get("input_type", "text"))[:30],
+            required=bool(raw.get("required")),
+            options=[str(o)[:200] for o in (raw.get("options") or [])][:200],
+            step=int(raw.get("step", 0)),
+        )
         if ref in existing:
             f = existing[ref]
             f.required, f.options, f.step = fi.required, fi.options or [], fi.step
@@ -219,10 +292,21 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
             db.add(f)
             a.fields.append(f)
         m = map_field(fi, ctx)
-        f.label, f.input_type, f.required, f.options, f.step = fi.label, fi.input_type, fi.required, fi.options or [], \
-            fi.step
-        f.field_key, f.sensitive, f.value, f.value_source, f.status, f.note = (m.field_key, m.sensitive, m.value,
-                                                                              m.source, m.status, m.note)
+        f.label, f.input_type, f.required, f.options, f.step = (
+            fi.label,
+            fi.input_type,
+            fi.required,
+            fi.options or [],
+            fi.step,
+        )
+        f.field_key, f.sensitive, f.value, f.value_source, f.status, f.note = (
+            m.field_key,
+            m.sensitive,
+            m.value,
+            m.source,
+            m.status,
+            m.note,
+        )
         if m.source == "draft" and m.value:
             db.add(ApplicationAnswer(application_id=a.id, question=fi.label, answer=m.value, source="draft"))
     s.answers_revision += 1
@@ -242,14 +326,19 @@ def fill_plan(db: Session, s: AutomationSession) -> list[dict]:
         if f.sensitive and f.status != "confirmed":
             continue
         action = "upload" if f.input_type == "file" else ("check" if f.input_type == "checkbox" else "fill")
-        out.append({"field_ref": f.field_ref, "value": f.value, "action": action, "input_type": f.input_type,
-                    "step": f.step})
+        out.append(
+            {"field_ref": f.field_ref, "value": f.value, "action": action, "input_type": f.input_type, "step": f.step}
+        )
     return out
 
 
 def unresolved(a: Application) -> list[ApplicationField]:
-    return [f for f in a.fields if f.status in ("needs_input", "needs_confirmation")
-            and (f.required or f.status == "needs_confirmation" or f.field_key == "consent")]
+    return [
+        f
+        for f in a.fields
+        if f.status in ("needs_input", "needs_confirmation")
+        and (f.required or f.status == "needs_confirmation" or f.field_key == "consent")
+    ]
 
 
 def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
@@ -284,13 +373,23 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
         if not r.get("ok") and f.status == "filled":
             f.note = "The page did not accept this value automatically - fill it in the browser."
 
-    if state in ("submitted", "submitted_unverified", "submitting"):
-        if s.submit_confirmed_at is None or s.state not in ("submit_confirmed", "submitting"):
-            _log(s, "Rejected a submission report that was not preceded by your confirmation")
-            db.commit()
-            raise AppError("Submission was not confirmed by the user.", code="submit_not_confirmed", status_code=409)
-    allowed = {"running", "action_required", "awaiting_answers", "filling", "awaiting_review", "submitting",
-               "submitted", "submitted_unverified", "unsupported", "failed"}
+    confirmed = s.submit_confirmed_at is not None and s.state in ("submit_confirmed", "submitting")
+    if state in ("submitted", "submitted_unverified", "submitting") and not confirmed:
+        _log(s, "Rejected a submission report that was not preceded by your confirmation")
+        db.commit()
+        raise AppError("Submission was not confirmed by the user.", code="submit_not_confirmed", status_code=409)
+    allowed = {
+        "running",
+        "action_required",
+        "awaiting_answers",
+        "filling",
+        "awaiting_review",
+        "submitting",
+        "submitted",
+        "submitted_unverified",
+        "unsupported",
+        "failed",
+    }
     if state not in allowed:
         raise AppError("Unknown session state.", code="invalid_state")
     if state == "awaiting_review" and unresolved(a):
@@ -304,14 +403,26 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
         s.result_text = str(report.get("result_text") or "")[:2000]
         a.confirmation_text = s.result_text
         set_status(db, a, "submitted", "Application submitted - confirmation detected on the page", verified=True)
-        db.add(ApplicationEvent(application_id=a.id, kind="submission", message="Submitted through the apply agent",
-                                data={"url": s.current_url, "resume_version_id": s.resume_version_id}))
+        db.add(
+            ApplicationEvent(
+                application_id=a.id,
+                kind="submission",
+                message="Submitted through the apply agent",
+                data={"url": s.current_url, "resume_version_id": s.resume_version_id},
+            )
+        )
         _record_answers(db, a)
     elif state == "submitted_unverified":
         s.result_text = str(report.get("result_text") or "")[:2000]
-        db.add(ApplicationEvent(application_id=a.id, kind="submission",
-                                message="Submit was clicked, but the submission status could not be verified. "
-                                        "Check the application portal.", data={"url": s.current_url}))
+        db.add(
+            ApplicationEvent(
+                application_id=a.id,
+                kind="submission",
+                message="Submit was clicked, but the submission status could not be verified. "
+                "Check the application portal.",
+                data={"url": s.current_url},
+            )
+        )
     elif state in ("unsupported", "failed"):
         db.add(ApplicationEvent(application_id=a.id, kind="automation", message=s.message or state))
     db.commit()
@@ -320,9 +431,16 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
 def _record_answers(db: Session, a: Application) -> None:
     for f in a.fields:
         if f.value and f.status in ("filled", "confirmed") and f.input_type != "file":
-            db.add(ApplicationAnswer(application_id=a.id, field_id=f.id, question=f.label,
-                                     answer=f.value if not f.sensitive else f.value, source=f.value_source,
-                                     confirmed=True))
+            db.add(
+                ApplicationAnswer(
+                    application_id=a.id,
+                    field_id=f.id,
+                    question=f.label,
+                    answer=f.value if not f.sensitive else f.value,
+                    source=f.value_source,
+                    confirmed=True,
+                )
+            )
 
 
 def update_field(db: Session, a: Application, field_id: int, value: str | None, confirm: bool, skip: bool) -> None:
@@ -347,8 +465,15 @@ def update_field(db: Session, a: Application, field_id: int, value: str | None, 
                 f.value = "true"
             f.status = "confirmed"
         elif f.value:
-            f.status = "filled" if not (f.sensitive or f.field_key in ("work_authorization", "sponsorship", "consent")
-                                        or f.value_source == "draft") else "needs_confirmation"
+            f.status = (
+                "filled"
+                if not (
+                    f.sensitive
+                    or f.field_key in ("work_authorization", "sponsorship", "consent")
+                    or f.value_source == "draft"
+                )
+                else "needs_confirmation"
+            )
         else:
             f.status = "needs_input"
     s = latest_session(db, a.id)
@@ -363,8 +488,11 @@ def update_field(db: Session, a: Application, field_id: int, value: str | None, 
 def confirm_submit(db: Session, a: Application, typed: str, ip: str = "") -> AutomationSession:
     s = latest_session(db, a.id)
     if s is None or s.state != "awaiting_review":
-        raise AppError("The application is not ready for submission yet.", code="not_ready",
-                       hint="Wait until every field is filled and the agent reports it is ready for review.")
+        raise AppError(
+            "The application is not ready for submission yet.",
+            code="not_ready",
+            hint="Wait until every field is filled and the agent reports it is ready for review.",
+        )
     pending = unresolved(a)
     if pending:
         raise AppError(f"{len(pending)} field(s) still need your answer or confirmation.", code="fields_pending")
@@ -372,16 +500,20 @@ def confirm_submit(db: Session, a: Application, typed: str, ip: str = "") -> Aut
         raise AppError("Your latest answers are still being applied. Try again in a moment.", code="not_ready")
     settings = db.get(UserSettings, a.user_id)
     job = db.get(Job, a.job_id)
-    if (settings is None or settings.submit_confirmation_mode == "type_company") and job and job.company:
-        if _loose(typed) != _loose(job.company):
-            raise AppError(f"Type the company name ({job.company}) exactly to confirm submission.",
-                           code="confirmation_mismatch")
+    must_type = (settings is None or settings.submit_confirmation_mode == "type_company") and job and job.company
+    if must_type and _loose(typed) != _loose(job.company):
+        raise AppError(
+            f"Type the company name ({job.company}) exactly to confirm submission.", code="confirmation_mismatch"
+        )
     s.state = "submit_confirmed"
     s.submit_confirmed_at = datetime.now(UTC)
     s.message = "You confirmed submission. The agent will submit the form now."
     _log(s, "User confirmed submission")
-    db.add(ApplicationEvent(application_id=a.id, kind="submission", message="You confirmed final submission",
-                            data={"session_id": s.id}))
+    db.add(
+        ApplicationEvent(
+            application_id=a.id, kind="submission", message="You confirmed final submission", data={"session_id": s.id}
+        )
+    )
     db.commit()
     return s
 

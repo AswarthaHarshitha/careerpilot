@@ -119,9 +119,12 @@ def parse_docx_template(data: bytes) -> dict:
     return {
         "format": "docx",
         "paragraph_count": len(paras),
-        "header": {"name": header_text[0] if header_text else "", "email": email.group() if email else "",
-                   "phone": phone.group().strip() if phone and sum(c.isdigit() for c in phone.group()) >= 8 else "",
-                   "links": []},
+        "header": {
+            "name": header_text[0] if header_text else "",
+            "email": email.group() if email else "",
+            "phone": phone.group().strip() if phone and sum(c.isdigit() for c in phone.group()) >= 8 else "",
+            "links": [],
+        },
         "sections": sections,
     }
 
@@ -135,8 +138,14 @@ def _layout(paras, body: list[int], kind: str) -> dict:
         for i in body:
             m = re.match(r"^([^:]{2,40}):\s*(.+)$", _text(paras[i]))
             if m:
-                cats.append({"name": m.group(1).strip(), "para": i, "value": m.group(2).strip(),
-                             "items": [s.strip() for s in _split_top_level_commas(m.group(2)) if s.strip()]})
+                cats.append(
+                    {
+                        "name": m.group(1).strip(),
+                        "para": i,
+                        "value": m.group(2).strip(),
+                        "items": [s.strip() for s in _split_top_level_commas(m.group(2)) if s.strip()],
+                    }
+                )
         if cats:
             return {"layout": "skills", "skills": cats}
     if bullets and len(bullets) < len(body):
@@ -155,16 +164,20 @@ def _layout(paras, body: list[int], kind: str) -> dict:
         out = []
         for e in entries:
             heading_text = " \t ".join(_text(paras[i]) for i in e["heading_paras"])
-            out.append({
-                "heading_paras": e["heading_paras"],
-                "bullet_paras": e["bullet_paras"],
-                "items": [{"text": re.sub(r"^[•▪◦●\-–]\s*", "", _text(paras[i]))} for i in e["bullet_paras"]],
-                "fields": _fields(heading_text, kind),
-            })
+            out.append(
+                {
+                    "heading_paras": e["heading_paras"],
+                    "bullet_paras": e["bullet_paras"],
+                    "items": [{"text": re.sub(r"^[•▪◦●\-–]\s*", "", _text(paras[i]))} for i in e["bullet_paras"]],
+                    "fields": _fields(heading_text, kind),
+                }
+            )
         return {"layout": "entries", "entries": out}
     if bullets:
-        return {"layout": "items", "items": [{"text": re.sub(r"^[•▪◦●\-–]\s*", "", _text(paras[i])), "para": i}
-                                             for i in bullets]}
+        return {
+            "layout": "items",
+            "items": [{"text": re.sub(r"^[•▪◦●\-–]\s*", "", _text(paras[i])), "para": i} for i in bullets],
+        }
     return {"layout": "paragraph", "paragraph": {"paras": body, "text": " ".join(_text(paras[i]) for i in body)}}
 
 
@@ -189,6 +202,7 @@ def _fields(text: str, kind: str) -> dict:
 
 
 # --- rendering ------------------------------------------------------------------------------------
+
 
 def _set_text(p, text: str) -> None:
     """Replaces a paragraph's text, keeping the formatting of its first text run."""
@@ -318,17 +332,29 @@ def _render_entries(paras, sec: dict, specs: list[dict]) -> None:
 def docx_to_pdf(data: bytes) -> tuple[bytes | None, str]:
     soffice = get_settings().soffice_path or shutil.which("soffice") or shutil.which("libreoffice")
     if not soffice:
-        return None, ("PDF export for Word templates needs LibreOffice on the server. The tailored .docx is ready "
-                      "to download.")
+        return None, (
+            "PDF export for Word templates needs LibreOffice on the server. The tailored .docx is ready to download."
+        )
     with tempfile.TemporaryDirectory(prefix="cp-docx-") as tmp:
         path = os.path.join(tmp, "resume.docx")
         with open(path, "wb") as fh:
             fh.write(data)
         try:
             subprocess.run(  # noqa: S603 - fixed argv
-                [soffice, "--headless", "--norestore", f"-env:UserInstallation=file://{tmp}/lo",
-                 "--convert-to", "pdf", "--outdir", tmp, path],
-                capture_output=True, timeout=get_settings().latex_timeout_seconds, check=False,
+                [
+                    soffice,
+                    "--headless",
+                    "--norestore",
+                    f"-env:UserInstallation=file://{tmp}/lo",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    tmp,
+                    path,
+                ],
+                capture_output=True,
+                timeout=get_settings().latex_timeout_seconds,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             return None, "Converting the Word document to PDF took too long."

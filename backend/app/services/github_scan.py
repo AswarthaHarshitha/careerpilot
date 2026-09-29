@@ -24,7 +24,7 @@ def slugify(name: str) -> str:
 
 
 def pretty_name(repo_name: str) -> str:
-    """"resolve-issue-platform" -> "Resolve Issue Platform" (the user can rename it)."""
+    """ "resolve-issue-platform" -> "Resolve Issue Platform" (the user can rename it)."""
     words = re.split(r"[-_\s]+", repo_name)
     return " ".join(w if (w.isupper() or any(c.isupper() for c in w[1:])) else w.capitalize() for w in words if w)
 
@@ -34,12 +34,25 @@ def client_for(settings: UserSettings | None) -> GitHubClient:
     return GitHubClient(token=token)
 
 
-def upsert_repository(db: Session, user_id: int, gh: GitHubClient, repo: RepoInfo, *, force: bool = False,
-                      settings: UserSettings | None = None) -> Project:
+def upsert_repository(
+    db: Session,
+    user_id: int,
+    gh: GitHubClient,
+    repo: RepoInfo,
+    *,
+    force: bool = False,
+    settings: UserSettings | None = None,
+) -> Project:
     project = db.scalar(select(Project).where(Project.user_id == user_id, Project.repo_full_name == repo.full_name))
     if project is None:
-        project = Project(user_id=user_id, name=repo.name, display_name=pretty_name(repo.name), origin="github",
-                          slug=_unique_slug(db, user_id, slugify(repo.name)), repo_full_name=repo.full_name)
+        project = Project(
+            user_id=user_id,
+            name=repo.name,
+            display_name=pretty_name(repo.name),
+            origin="github",
+            slug=_unique_slug(db, user_id, slugify(repo.name)),
+            repo_full_name=repo.full_name,
+        )
         db.add(project)
     project.description = repo.description
     project.repo_url = repo.html_url
@@ -50,12 +63,19 @@ def upsert_repository(db: Session, user_id: int, gh: GitHubClient, repo: RepoInf
     project.primary_language = repo.language
     project.topics = repo.topics
     project.stars = repo.stars
-    unchanged = (project.last_scanned_at is not None and project.pushed_at == repo.pushed_at
-                 and not project.scan_error and not force)
+    unchanged = (
+        project.last_scanned_at is not None
+        and project.pushed_at == repo.pushed_at
+        and not project.scan_error
+        and not force
+    )
     project.pushed_at = repo.pushed_at
     profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user_id))
-    was_profile_asset = apply_classification(project, github_username=settings.github_username if settings else "",
-                                             portfolio_url=profile.portfolio_url if profile else "")
+    was_profile_asset = apply_classification(
+        project,
+        github_username=settings.github_username if settings else "",
+        portfolio_url=profile.portfolio_url if profile else "",
+    )
     if was_profile_asset and profile and not profile.portfolio_url and project.homepage_url:
         profile.portfolio_url = project.homepage_url  # the user's own site, usable as a header link
     if project.status not in ("built", "verified", "deployed"):
@@ -76,8 +96,12 @@ def upsert_repository(db: Session, user_id: int, gh: GitHubClient, repo: RepoInf
         if content:
             manifests[path] = content
     analysis = analyze_repository(
-        description=repo.description, homepage=repo.homepage, topics=repo.topics,
-        tree=[(t.path, t.size) for t in tree], readme=readme, manifests=manifests,
+        description=repo.description,
+        homepage=repo.homepage,
+        topics=repo.topics,
+        tree=[(t.path, t.size) for t in tree],
+        readme=readme,
+        manifests=manifests,
     )
     project.languages = analysis.languages
     project.readme_excerpt = analysis.readme_excerpt
@@ -86,19 +110,33 @@ def upsert_repository(db: Session, user_id: int, gh: GitHubClient, repo: RepoInf
     db.flush()
 
     # Replace machine-generated evidence; keep anything the user entered or reviewed.
-    db.execute(delete(ProjectEvidence).where(
-        ProjectEvidence.project_id == project.id,
-        ProjectEvidence.source_type.notin_(("user",)),
-        ProjectEvidence.user_reviewed.is_(False),
-    ))
-    reviewed = {(e.canonical or e.label.lower(), e.source_type) for e in db.scalars(
-        select(ProjectEvidence).where(ProjectEvidence.project_id == project.id))}
+    db.execute(
+        delete(ProjectEvidence).where(
+            ProjectEvidence.project_id == project.id,
+            ProjectEvidence.source_type.notin_(("user",)),
+            ProjectEvidence.user_reviewed.is_(False),
+        )
+    )
+    reviewed = {
+        (e.canonical or e.label.lower(), e.source_type)
+        for e in db.scalars(select(ProjectEvidence).where(ProjectEvidence.project_id == project.id))
+    }
     for item in analysis.evidence:
         if (item.canonical or item.label.lower(), item.source_type) in reviewed:
             continue
-        db.add(ProjectEvidence(project_id=project.id, kind=item.kind, label=item.label, canonical=item.canonical,
-                               category=item.category, status=item.status, source_type=item.source_type,
-                               source_detail=item.source_detail, snippet=item.snippet))
+        db.add(
+            ProjectEvidence(
+                project_id=project.id,
+                kind=item.kind,
+                label=item.label,
+                canonical=item.canonical,
+                category=item.category,
+                status=item.status,
+                source_type=item.source_type,
+                source_detail=item.source_detail,
+                snippet=item.snippet,
+            )
+        )
     project.last_scanned_at = datetime.now(UTC)
     db.commit()
 
@@ -129,8 +167,9 @@ def enrich_with_llm(db: Session, project: Project, settings: UserSettings) -> No
     provider = get_provider(settings)
     if provider is None or not project.readme_excerpt:
         return
-    prompt = (f"Repository: {project.repo_full_name}\nDescription: {project.description}\n\n"
-              + wrap_untrusted("README", project.readme_excerpt, 8000))
+    prompt = f"Repository: {project.repo_full_name}\nDescription: {project.description}\n\n" + wrap_untrusted(
+        "README", project.readme_excerpt, 8000
+    )
     try:
         data = provider.complete_json(LLM_SYSTEM, prompt, max_tokens=1200)
     except LLMError as exc:
@@ -146,11 +185,19 @@ def enrich_with_llm(db: Session, project: Project, settings: UserSettings) -> No
         if not name or key in existing or key.startswith("x:") and len(name) > 40:
             continue
         existing.add(key)
-        db.add(ProjectEvidence(project_id=project.id, kind="concept" if category_of(key) == "concept" else "technology",
-                               label=display_name(key) if not key.startswith("x:") else name, canonical=key,
-                               category=category_of(key), status="inferred", source_type="llm",
-                               source_detail=f"model reading of README ({provider.name})",
-                               snippet=str(s.get("evidence", ""))[:240]))
+        db.add(
+            ProjectEvidence(
+                project_id=project.id,
+                kind="concept" if category_of(key) == "concept" else "technology",
+                label=display_name(key) if not key.startswith("x:") else name,
+                canonical=key,
+                category=category_of(key),
+                status="inferred",
+                source_type="llm",
+                source_detail=f"model reading of README ({provider.name})",
+                snippet=str(s.get("evidence", ""))[:240],
+            )
+        )
         added += 1
     db.commit()
 
@@ -173,8 +220,11 @@ def scan_account(ctx: TaskContext) -> dict:
     ctx._set_step(label, "running", f"0 of {len(repos)}")
     for i, repo in enumerate(repos, 1):
         try:
-            before = db.scalar(select(Project.last_scanned_at).where(Project.user_id == user_id,
-                                                                     Project.repo_full_name == repo.full_name))
+            before = db.scalar(
+                select(Project.last_scanned_at).where(
+                    Project.user_id == user_id, Project.repo_full_name == repo.full_name
+                )
+            )
             p = upsert_repository(db, user_id, gh, repo, force=force, settings=settings)
             if before is not None and p.last_scanned_at == before:
                 skipped += 1
@@ -189,14 +239,21 @@ def scan_account(ctx: TaskContext) -> dict:
             log.warning("scan of %s failed: %s", repo.full_name, type(exc).__name__)
             failed.append(repo.name)
         ctx._set_step(label, "running", f"{i} of {len(repos)}")
-    ctx._set_step(label, "done", f"{scanned} analysed, {skipped} unchanged" + (f", {len(failed)} failed" if failed
-                                                                                 else ""))
+    ctx._set_step(
+        label, "done", f"{scanned} analysed, {skipped} unchanged" + (f", {len(failed)} failed" if failed else "")
+    )
     with ctx.step("Checking suggested projects"):
         promoted = verify_suggested_projects(db, user_id)
     settings.github_last_scan_at = datetime.now(UTC)
     db.commit()
-    return {"repositories": len(repos), "scanned": scanned, "unchanged": skipped, "failed": failed,
-            "suggested_verified": promoted, "rate_remaining": gh.remaining}
+    return {
+        "repositories": len(repos),
+        "scanned": scanned,
+        "unchanged": skipped,
+        "failed": failed,
+        "suggested_verified": promoted,
+        "rate_remaining": gh.remaining,
+    }
 
 
 task_handler("github_scan")(scan_account)
@@ -228,8 +285,11 @@ def verify_suggested_projects(db: Session, user_id: int) -> int:
     """A suggested project is verified only when its linked repository shows verified evidence for the gap skills
     it was meant to demonstrate. The per-skill result is stored for display."""
     promoted = 0
-    suggestions = db.scalars(select(SuggestedProject).where(SuggestedProject.user_id == user_id,
-                                                            SuggestedProject.linked_project_id.is_not(None))).all()
+    suggestions = db.scalars(
+        select(SuggestedProject).where(
+            SuggestedProject.user_id == user_id, SuggestedProject.linked_project_id.is_not(None)
+        )
+    ).all()
     for sp in suggestions:
         project = db.get(Project, sp.linked_project_id)
         if project is None:
@@ -239,8 +299,16 @@ def verify_suggested_projects(db: Session, user_id: int) -> int:
             if e.canonical and e.status in ("verified", "user_provided"):
                 by_key.setdefault(e.canonical, e.source_detail or e.source_type)
         wanted = list(dict.fromkeys([g for g in sp.gap_skills if g] + [a for a in sp.existing_skills if a]))
-        sp.verification = [{"skill": k, "label": display_name(k), "verified": k in by_key, "source": by_key.get(k, ""),
-                            "gap": k in sp.gap_skills} for k in wanted]
+        sp.verification = [
+            {
+                "skill": k,
+                "label": display_name(k),
+                "verified": k in by_key,
+                "source": by_key.get(k, ""),
+                "gap": k in sp.gap_skills,
+            }
+            for k in wanted
+        ]
         missing = [display_name(g) for g in sp.gap_skills if g and g not in by_key]
         if not project.last_scanned_at:
             sp.status = "building"
@@ -250,10 +318,14 @@ def verify_suggested_projects(db: Session, user_id: int) -> int:
                 promoted += 1
             sp.status = "deployed" if project.homepage_url else "verified"
             sp.verification_notes = f"Verified from {project.repo_full_name}: " + ", ".join(
-                display_name(g) for g in sp.gap_skills)
+                display_name(g) for g in sp.gap_skills
+            )
         else:
             sp.status = "built"
-            sp.verification_notes = ("The repository does not yet show verified evidence for: " + ", ".join(missing)
-                                      if missing else "No gap skills recorded.")
+            sp.verification_notes = (
+                "The repository does not yet show verified evidence for: " + ", ".join(missing)
+                if missing
+                else "No gap skills recorded."
+            )
     db.commit()
     return promoted

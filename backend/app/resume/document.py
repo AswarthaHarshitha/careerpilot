@@ -25,11 +25,27 @@ import re
 from app.core.errors import AppError
 
 PROVENANCE_LABEL = {
-    "profile": "VERIFIED_PROFILE", "template": "USER_PROVIDED", "evidence": "AI_GENERATED_FROM_VERIFIED_EVIDENCE",
-    "rewritten": "AI_GENERATED_FROM_VERIFIED_EVIDENCE", "user": "USER_EDITED",
+    "profile": "VERIFIED_PROFILE",
+    "template": "USER_PROVIDED",
+    "evidence": "AI_GENERATED_FROM_VERIFIED_EVIDENCE",
+    "rewritten": "AI_GENERATED_FROM_VERIFIED_EVIDENCE",
+    "user": "USER_EDITED",
 }
-OPS = ("update_text", "add_bullet", "remove_bullet", "move_bullet", "move_entry", "remove_entry", "restore_entry",
-       "set_link", "remove_section", "restore_section", "set_page_target", "set_skills", "update_field")
+OPS = (
+    "update_text",
+    "add_bullet",
+    "remove_bullet",
+    "move_bullet",
+    "move_entry",
+    "remove_entry",
+    "restore_entry",
+    "set_link",
+    "remove_section",
+    "restore_section",
+    "set_page_target",
+    "set_skills",
+    "update_field",
+)
 
 
 def _slug(s: str) -> str:
@@ -44,22 +60,32 @@ def ensure_ids(content: dict, header: dict | None = None) -> dict:
         h.setdefault("name", header.get("name", ""))
         h.setdefault("original_name", header.get("name", ""))
         if "links" not in h:
-            h["links"] = [{"id": f"header.link.{lk['kind']}", "kind": lk["kind"], "url": lk["url"],
-                           "text": lk.get("text", ""), "mode": "template"} for lk in header.get("links", [])
-                          if lk.get("kind") in ("linkedin", "github", "website", "portfolio")]
+            h["links"] = [
+                {
+                    "id": f"header.link.{lk['kind']}",
+                    "kind": lk["kind"],
+                    "url": lk["url"],
+                    "text": lk.get("text", ""),
+                    "mode": "template",
+                }
+                for lk in header.get("links", [])
+                if lk.get("kind") in ("linkedin", "github", "website", "portfolio")
+            ]
             for lk in h["links"]:
                 if lk["kind"] == "website":
                     lk["kind"], lk["id"] = "portfolio", "header.link.portfolio"
     seen: set[str] = set()
     for sec in content.get("sections", []):
-        sid = sec.setdefault("id", f"{sec['kind']}" if sec["kind"] in ("summary", "skills") else
-                             f"section.{sec['index']}")
+        sid = sec.setdefault(
+            "id", f"{sec['kind']}" if sec["kind"] in ("summary", "skills") else f"section.{sec['index']}"
+        )
         sec.setdefault("title_id", f"section.{sec['index']}.title")
         if sec.get("layout") == "paragraph":
             sec.setdefault("text_id", "summary.text" if sec["kind"] == "summary" else f"{sid}.text")
         for e in sec.get("entries") or []:
             if "id" not in e:
-                base = f"{sec['kind']}.{_slug(e.get('fields', {}).get('short_name') or e.get('fields', {}).get('primary', ''))}"
+                fields = e.get("fields", {})
+                base = f"{sec['kind']}.{_slug(fields.get('short_name') or fields.get('primary', ''))}"
                 eid, n = base, 2
                 while eid in seen:
                     eid, n = f"{base}-{n}", n + 1
@@ -85,18 +111,32 @@ def index(content: dict) -> dict[str, dict]:
     for lk in content.get("header", {}).get("links", []):
         out[lk["id"]] = {"type": "link", "kind": lk["kind"], "mode": lk["mode"]}
     for sec in content.get("sections", []):
-        out[sec["title_id"]] = {"type": "section_title", "section": sec["id"], "text": sec.get("title_text", sec["title"])}
+        out[sec["title_id"]] = {
+            "type": "section_title",
+            "section": sec["id"],
+            "text": sec.get("title_text", sec["title"]),
+        }
         if sec.get("layout") == "paragraph":
             out[sec["text_id"]] = {"type": "paragraph", "section": sec["id"], "text": sec.get("text", "")}
         for e in sec.get("entries") or []:
             out[e["id"]] = {"type": "entry", "section": sec["id"], "text": e.get("fields", {}).get("primary", "")}
             for role in ("primary", "secondary", "dates", "location"):
                 if role in (e.get("fields") or {}):
-                    out[f"{e['id']}.field.{role}"] = {"type": "field", "entry": e["id"], "role": role,
-                                                      "text": e["fields"][role]}
+                    out[f"{e['id']}.field.{role}"] = {
+                        "type": "field",
+                        "entry": e["id"],
+                        "role": role,
+                        "text": e["fields"][role],
+                    }
             for b in e.get("bullets") or []:
-                out[b["id"]] = {"type": "bullet", "entry": e["id"], "section": sec["id"], "text": b["text"],
-                                "origin": b.get("origin"), "tech_line": bool(b.get("tech_line"))}
+                out[b["id"]] = {
+                    "type": "bullet",
+                    "entry": e["id"],
+                    "section": sec["id"],
+                    "text": b["text"],
+                    "origin": b.get("origin"),
+                    "tech_line": bool(b.get("tech_line")),
+                }
         for i, iid in enumerate(sec.get("item_ids") or []):
             if i < len(sec.get("items") or []):
                 out[iid] = {"type": "item", "section": sec["id"], "pos": i, "text": sec["items"][i]}
@@ -220,8 +260,9 @@ def apply_ops(content: dict, ops: list[dict], source: str) -> tuple[dict, list[s
             sec["entries"].remove(e)
             sec.setdefault("removed_entries", []).append(e)
         elif kind == "restore_entry":
-            sec = next((s for s in doc["sections"] if any(x["id"] == tid for x in s.get("removed_entries") or [])),
-                       None)
+            sec = next(
+                (s for s in doc["sections"] if any(x["id"] == tid for x in s.get("removed_entries") or [])), None
+            )
             if sec is None:
                 raise AppError("Nothing to restore.", code="unknown_element")
             e = next(x for x in sec["removed_entries"] if x["id"] == tid)
@@ -271,10 +312,15 @@ def user_claims(content: dict) -> list[str]:
                 if b.get("origin") != "user":
                     continue
                 orig = b.get("original", "")
-                new_nums = {m.group().strip() for m in NUMBER_RX.finditer(b["text"])} - \
-                    {m.group().strip() for m in NUMBER_RX.finditer(orig)}
-                terms = [t for t in IMPACT_TERMS if re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", b["text"], re.I)
-                         and not re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", orig, re.I)]
+                new_nums = {m.group().strip() for m in NUMBER_RX.finditer(b["text"])} - {
+                    m.group().strip() for m in NUMBER_RX.finditer(orig)
+                }
+                terms = [
+                    t
+                    for t in IMPACT_TERMS
+                    if re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", b["text"], re.I)
+                    and not re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", orig, re.I)
+                ]
                 if new_nums or terms:
                     flagged.append(b["text"][:100])
     return flagged

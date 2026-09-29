@@ -99,8 +99,12 @@ class Project(Base):
     @property
     def evidence_eligible(self) -> bool:
         """True only for finished projects the user has not excluded - never for a portfolio/profile."""
-        return (self.asset_type == "project" and self.resume_eligible and not self.hidden
-                and self.status in EVIDENCE_READY_STATUSES)
+        return (
+            self.asset_type == "project"
+            and self.resume_eligible
+            and not self.hidden
+            and self.status in EVIDENCE_READY_STATUSES
+        )
 
 
 class ProjectEvidence(Base):
@@ -115,7 +119,9 @@ class ProjectEvidence(Base):
     canonical: Mapped[str] = mapped_column(String(100), default="")  # taxonomy key when it is a known skill
     category: Mapped[str] = mapped_column(String(40), default="")
     status: Mapped[str] = mapped_column(String(20))  # verified | user_provided | inferred | unsupported
-    source_type: Mapped[str] = mapped_column(String(30))  # dependency | readme | file_tree | language | metadata | user | llm
+    source_type: Mapped[str] = mapped_column(
+        String(30)
+    )  # dependency | readme | file_tree | language | metadata | user | llm
     source_detail: Mapped[str] = mapped_column(String(300), default="")
     snippet: Mapped[str] = mapped_column(Text, default="")
     user_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)

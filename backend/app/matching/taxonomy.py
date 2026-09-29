@@ -77,14 +77,26 @@ _add("ios", "iOS", "mobile", ["ios development"], ["swift"])
 
 # --- Backend -------------------------------------------------------------------------------------
 _add("nodejs", "Node.js", "backend", ["node.js", "nodejs", "node js", "node"], ["express"])
-_add("express", "Express.js", "backend", ["express.js", "expressjs", "express js"], ["nodejs", "nestjs"],
-     parents=["nodejs", "rest_api"])
+_add(
+    "express",
+    "Express.js",
+    "backend",
+    ["express.js", "expressjs", "express js"],
+    ["nodejs", "nestjs"],
+    parents=["nodejs", "rest_api"],
+)
 _add("nestjs", "NestJS", "backend", ["nest.js"], ["express"], parents=["nodejs"])
 _add("fastapi", "FastAPI", "backend", ["fast api"], ["flask", "django"], parents=["python", "rest_api"])
 _add("django", "Django", "backend", ["django rest framework", "drf"], ["flask", "fastapi"], parents=["python"])
 _add("flask", "Flask", "backend", [], ["fastapi", "django"], parents=["python"])
-_add("spring_boot", "Spring Boot", "backend", ["spring boot", "springboot", "spring framework", "spring mvc", "spring"],
-     ["java"], parents=["java"])
+_add(
+    "spring_boot",
+    "Spring Boot",
+    "backend",
+    ["spring boot", "springboot", "spring framework", "spring mvc", "spring"],
+    ["java"],
+    parents=["java"],
+)
 _add("hibernate", "Hibernate", "backend", ["jpa", "spring data jpa"], ["spring_boot"])
 _add("dotnet", ".NET", "backend", [".net", "asp.net", ".net core", "asp.net core", "dotnet"], ["csharp"])
 _add("rails", "Ruby on Rails", "backend", ["rails", "ruby on rails", "ror"], ["ruby"])
@@ -92,19 +104,43 @@ _add("laravel", "Laravel", "backend", [], ["php"])
 _add("graphql", "GraphQL", "backend", ["apollo"], ["rest_api"])
 _add("grpc", "gRPC", "backend", ["protobuf", "protocol buffers"], ["rest_api"])
 _add("websockets", "WebSockets", "backend", ["websocket", "socket.io", "socketio"])
-_add("sap_cap", "SAP CAP", "backend", ["cloud application programming model", "sap cloud application programming"],
-     ["nodejs"], strict=["CAP"])
+_add(
+    "sap_cap",
+    "SAP CAP",
+    "backend",
+    ["cloud application programming model", "sap cloud application programming"],
+    ["nodejs"],
+    strict=["CAP"],
+)
 _add("sap_btp", "SAP BTP", "cloud", ["btp", "sap business technology platform", "sap cloud platform"])
 
 # --- Databases -----------------------------------------------------------------------------------
-_add("postgresql", "PostgreSQL", "database", ["postgres", "postgresql", "psql", "pgsql"], ["mysql", "sql"],
-     parents=["sql"])
+_add(
+    "postgresql",
+    "PostgreSQL",
+    "database",
+    ["postgres", "postgresql", "psql", "pgsql"],
+    ["mysql", "sql"],
+    parents=["sql"],
+)
 _add("mysql", "MySQL", "database", ["mariadb"], ["postgresql", "sql"], parents=["sql"])
 _add("sqlite", "SQLite", "database", ["sqlite3"], ["postgresql", "mysql"], parents=["sql"])
-_add("oracle_db", "Oracle Database", "database", ["oracle db", "oracle database", "oracle sql", "pl/sql"], ["sql"],
-     parents=["sql"])
-_add("sql_server", "SQL Server", "database", ["mssql", "ms sql", "microsoft sql server", "sql server"], ["sql"],
-     parents=["sql"])
+_add(
+    "oracle_db",
+    "Oracle Database",
+    "database",
+    ["oracle db", "oracle database", "oracle sql", "pl/sql"],
+    ["sql"],
+    parents=["sql"],
+)
+_add(
+    "sql_server",
+    "SQL Server",
+    "database",
+    ["mssql", "ms sql", "microsoft sql server", "sql server"],
+    ["sql"],
+    parents=["sql"],
+)
 _add("mongodb", "MongoDB", "database", ["mongo", "mongoose"], ["nosql"], parents=["nosql"])
 _add("redis", "Redis", "database", [], ["caching"])
 _add("dynamodb", "DynamoDB", "database", ["dynamo db"], ["nosql", "aws"], parents=["nosql", "aws"])
@@ -113,36 +149,86 @@ _add("elasticsearch", "Elasticsearch", "database", ["elastic search", "opensearc
 _add("firebase", "Firebase", "database", ["firestore"], ["nosql"])
 _add("supabase", "Supabase", "database", [], ["postgresql"])
 _add("nosql", "NoSQL", "database", ["non-relational database", "document database"], ["mongodb"])
-_add("vector_db", "Vector databases", "database", ["vector database", "vector store", "faiss", "pinecone",
-     "chromadb", "chroma", "pgvector", "weaviate", "qdrant", "milvus"], ["rag"])
+_add(
+    "vector_db",
+    "Vector databases",
+    "database",
+    [
+        "vector database",
+        "vector store",
+        "faiss",
+        "pinecone",
+        "chromadb",
+        "chroma",
+        "pgvector",
+        "weaviate",
+        "qdrant",
+        "milvus",
+    ],
+    ["rag"],
+)
 _add("snowflake", "Snowflake", "database", [], ["data_warehouse"])
 _add("bigquery", "BigQuery", "database", ["big query"], ["gcp", "data_warehouse"])
-_add("data_warehouse", "Data warehousing", "data", ["data warehouse", "star schema", "dimensional modeling",
-     "data modeling", "data modelling"], ["etl"])
+_add(
+    "data_warehouse",
+    "Data warehousing",
+    "data",
+    ["data warehouse", "star schema", "dimensional modeling", "data modeling", "data modelling"],
+    ["etl"],
+)
 
 # --- Cloud / DevOps ------------------------------------------------------------------------------
 _add("aws", "AWS", "cloud", ["amazon web services", "aws cloud"], ["gcp", "azure", "cloud"])
-_add("aws_lambda", "AWS Lambda", "cloud", ["lambda functions", "aws lambda"], ["serverless", "aws"], parents=["aws",
-     "serverless"])
+_add(
+    "aws_lambda",
+    "AWS Lambda",
+    "cloud",
+    ["lambda functions", "aws lambda"],
+    ["serverless", "aws"],
+    parents=["aws", "serverless"],
+)
 _add("aws_s3", "Amazon S3", "cloud", ["s3", "amazon s3", "aws s3"], ["aws"], parents=["aws"])
 _add("aws_ec2", "Amazon EC2", "cloud", ["ec2", "amazon ec2"], ["aws"], parents=["aws"])
 _add("azure", "Azure", "cloud", ["microsoft azure"], ["aws", "gcp", "cloud"])
 _add("gcp", "Google Cloud", "cloud", ["gcp", "google cloud platform", "google cloud"], ["aws", "azure", "cloud"])
 _add("oci", "Oracle Cloud", "cloud", ["oracle cloud infrastructure", "oci", "oracle cloud"], ["cloud"])
 _add("ibm_cloud", "IBM Cloud", "cloud", ["ibm cloud"], ["cloud"])
-_add("cloud", "Cloud platforms", "cloud", ["cloud computing", "cloud services", "cloud platforms", "cloud-native",
-     "cloud native"], ["aws", "gcp", "azure"])
+_add(
+    "cloud",
+    "Cloud platforms",
+    "cloud",
+    ["cloud computing", "cloud services", "cloud platforms", "cloud-native", "cloud native"],
+    ["aws", "gcp", "azure"],
+)
 _add("serverless", "Serverless", "cloud", ["serverless architecture", "faas"], ["aws_lambda"])
 _add("vercel", "Vercel", "cloud", [], ["cloud"])
 _add("render_host", "Render", "cloud", ["render.com"], ["cloud"])
 _add("heroku", "Heroku", "cloud", [], ["cloud"])
-_add("docker", "Docker", "devops", ["containers", "containerization", "dockerfile", "docker compose",
-     "docker-compose"], ["kubernetes"])
+_add(
+    "docker",
+    "Docker",
+    "devops",
+    ["containers", "containerization", "dockerfile", "docker compose", "docker-compose"],
+    ["kubernetes"],
+)
 _add("kubernetes", "Kubernetes", "devops", ["k8s", "eks", "gke", "aks", "helm", "openshift"], ["docker"])
 _add("terraform", "Terraform", "devops", ["infrastructure as code", "iac"], ["cloudformation"])
 _add("cloudformation", "CloudFormation", "devops", ["aws cloudformation", "cdk"], ["terraform", "aws"])
-_add("ci_cd", "CI/CD", "devops", ["ci/cd", "cicd", "continuous integration", "continuous delivery",
-     "continuous deployment", "build pipelines", "deployment pipelines"], ["github_actions", "jenkins"])
+_add(
+    "ci_cd",
+    "CI/CD",
+    "devops",
+    [
+        "ci/cd",
+        "cicd",
+        "continuous integration",
+        "continuous delivery",
+        "continuous deployment",
+        "build pipelines",
+        "deployment pipelines",
+    ],
+    ["github_actions", "jenkins"],
+)
 _add("github_actions", "GitHub Actions", "devops", ["gh actions"], ["ci_cd"], parents=["ci_cd"])
 _add("jenkins", "Jenkins", "devops", [], ["ci_cd"], parents=["ci_cd"])
 _add("gitlab_ci", "GitLab CI", "devops", ["gitlab ci/cd"], ["ci_cd"], parents=["ci_cd"])
@@ -152,75 +238,209 @@ _add("git", "Git", "tool", ["version control", "source control"], ["github"])
 _add("github", "GitHub", "tool", [], ["git"])
 _add("kafka", "Apache Kafka", "backend", ["kafka"], ["message_queues"])
 _add("rabbitmq", "RabbitMQ", "backend", [], ["message_queues"])
-_add("message_queues", "Message queues", "backend", ["message queue", "message broker", "pub/sub", "event-driven",
-     "event driven", "job queue", "task queue"], ["kafka", "rabbitmq"])
+_add(
+    "message_queues",
+    "Message queues",
+    "backend",
+    ["message queue", "message broker", "pub/sub", "event-driven", "event driven", "job queue", "task queue"],
+    ["kafka", "rabbitmq"],
+)
 _add("celery", "Celery", "backend", [], ["message_queues"], parents=["message_queues"])
-_add("monitoring", "Monitoring & observability", "devops", ["observability", "prometheus", "grafana", "logging",
-     "datadog", "new relic", "splunk"])
+_add(
+    "monitoring",
+    "Monitoring & observability",
+    "devops",
+    ["observability", "prometheus", "grafana", "logging", "datadog", "new relic", "splunk"],
+)
 
 # --- Data / ML / AI ------------------------------------------------------------------------------
-_add("machine_learning", "Machine Learning", "ml", ["ml", "machine-learning", "predictive modeling",
-     "predictive modelling"], ["deep_learning", "data_science"])
-_add("deep_learning", "Deep Learning", "ml", ["neural networks", "neural network", "dl", "cnn", "rnn", "lstm",
-     "convolutional neural networks"], ["machine_learning"], parents=["machine_learning"])
-_add("nlp", "NLP", "ml", ["natural language processing", "text classification", "named entity recognition"],
-     ["llm", "machine_learning"], parents=["machine_learning"])
-_add("computer_vision", "Computer Vision", "ml", ["image processing", "object detection", "image segmentation",
-     "semantic segmentation"], ["deep_learning"], parents=["machine_learning"])
-_add("llm", "LLMs", "ml", ["large language models", "large language model", "llms", "generative ai", "genai",
-     "gen ai", "gpt", "prompt engineering", "llm", "gemini", "openai api", "function calling"],
-     ["nlp", "rag"], parents=["machine_learning"])
-_add("rag", "RAG", "ml", ["retrieval augmented generation", "retrieval-augmented generation", "rag"],
-     ["llm", "vector_db"], parents=["llm"])
+_add(
+    "machine_learning",
+    "Machine Learning",
+    "ml",
+    ["ml", "machine-learning", "predictive modeling", "predictive modelling"],
+    ["deep_learning", "data_science"],
+)
+_add(
+    "deep_learning",
+    "Deep Learning",
+    "ml",
+    ["neural networks", "neural network", "dl", "cnn", "rnn", "lstm", "convolutional neural networks"],
+    ["machine_learning"],
+    parents=["machine_learning"],
+)
+_add(
+    "nlp",
+    "NLP",
+    "ml",
+    ["natural language processing", "text classification", "named entity recognition"],
+    ["llm", "machine_learning"],
+    parents=["machine_learning"],
+)
+_add(
+    "computer_vision",
+    "Computer Vision",
+    "ml",
+    ["image processing", "object detection", "image segmentation", "semantic segmentation"],
+    ["deep_learning"],
+    parents=["machine_learning"],
+)
+_add(
+    "llm",
+    "LLMs",
+    "ml",
+    [
+        "large language models",
+        "large language model",
+        "llms",
+        "generative ai",
+        "genai",
+        "gen ai",
+        "gpt",
+        "prompt engineering",
+        "llm",
+        "gemini",
+        "openai api",
+        "function calling",
+    ],
+    ["nlp", "rag"],
+    parents=["machine_learning"],
+)
+_add(
+    "rag",
+    "RAG",
+    "ml",
+    ["retrieval augmented generation", "retrieval-augmented generation", "rag"],
+    ["llm", "vector_db"],
+    parents=["llm"],
+)
 _add("langchain", "LangChain", "ml", ["langgraph", "llamaindex", "llama index"], ["llm", "rag"], parents=["llm"])
-_add("ai_agents", "AI agents", "ml", ["agentic", "ai agent", "ai agents", "agentic ai", "autonomous agents"],
-     ["llm"], parents=["llm"])
-_add("tensorflow", "TensorFlow", "ml", ["tf", "tensorflow.js", "tfjs"], ["pytorch", "keras"],
-     parents=["deep_learning"])
+_add(
+    "ai_agents",
+    "AI agents",
+    "ml",
+    ["agentic", "ai agent", "ai agents", "agentic ai", "autonomous agents"],
+    ["llm"],
+    parents=["llm"],
+)
+_add("tensorflow", "TensorFlow", "ml", ["tf", "tensorflow.js", "tfjs"], ["pytorch", "keras"], parents=["deep_learning"])
 _add("keras", "Keras", "ml", [], ["tensorflow"], parents=["deep_learning"])
 _add("pytorch", "PyTorch", "ml", ["torch"], ["tensorflow"], parents=["deep_learning"])
-_add("scikit_learn", "scikit-learn", "ml", ["sklearn", "scikit learn", "scikit-learn"], ["machine_learning"],
-     parents=["machine_learning"])
-_add("huggingface", "Hugging Face", "ml", ["hugging face", "huggingface", "transformers"], ["pytorch", "nlp"],
-     parents=["deep_learning"])
-_add("xgboost", "XGBoost", "ml", ["lightgbm", "gradient boosting", "catboost"], ["scikit_learn"],
-     parents=["machine_learning"])
+_add(
+    "scikit_learn",
+    "scikit-learn",
+    "ml",
+    ["sklearn", "scikit learn", "scikit-learn"],
+    ["machine_learning"],
+    parents=["machine_learning"],
+)
+_add(
+    "huggingface",
+    "Hugging Face",
+    "ml",
+    ["hugging face", "huggingface", "transformers"],
+    ["pytorch", "nlp"],
+    parents=["deep_learning"],
+)
+_add(
+    "xgboost",
+    "XGBoost",
+    "ml",
+    ["lightgbm", "gradient boosting", "catboost"],
+    ["scikit_learn"],
+    parents=["machine_learning"],
+)
 _add("opencv", "OpenCV", "ml", ["open cv"], ["computer_vision"], parents=["computer_vision"])
 _add("mediapipe", "MediaPipe", "ml", [], ["computer_vision"], parents=["computer_vision"])
-_add("reinforcement_learning", "Reinforcement Learning", "ml", ["markov decision process", "mdp",
-     "value iteration", "q-learning", "policy iteration"], ["machine_learning"], parents=["machine_learning"])
-_add("mlops", "MLOps", "ml", ["model deployment", "ml pipelines", "mlflow", "kubeflow", "model serving"],
-     ["machine_learning", "docker"])
+_add(
+    "reinforcement_learning",
+    "Reinforcement Learning",
+    "ml",
+    ["markov decision process", "mdp", "value iteration", "q-learning", "policy iteration"],
+    ["machine_learning"],
+    parents=["machine_learning"],
+)
+_add(
+    "mlops",
+    "MLOps",
+    "ml",
+    ["model deployment", "ml pipelines", "mlflow", "kubeflow", "model serving"],
+    ["machine_learning", "docker"],
+)
 _add("pandas", "Pandas", "data", [], ["numpy", "data_analysis"], parents=["data_analysis"])
 _add("numpy", "NumPy", "data", [], ["pandas"])
-_add("data_analysis", "Data analysis", "data", ["data analytics", "exploratory data analysis", "eda",
-     "analytics"], ["pandas", "data_science"])
+_add(
+    "data_analysis",
+    "Data analysis",
+    "data",
+    ["data analytics", "exploratory data analysis", "eda", "analytics"],
+    ["pandas", "data_science"],
+)
 _add("data_science", "Data science", "data", ["data scientist"], ["machine_learning", "data_analysis"])
-_add("data_visualization", "Data visualization", "data", ["data visualisation", "matplotlib", "seaborn", "plotly",
-     "dashboards", "dashboard", "recharts", "chart.js"], ["powerbi", "tableau"])
-_add("powerbi", "Power BI", "data", ["power bi", "powerbi"], ["tableau", "data_visualization"],
-     parents=["data_visualization"])
+_add(
+    "data_visualization",
+    "Data visualization",
+    "data",
+    ["data visualisation", "matplotlib", "seaborn", "plotly", "dashboards", "dashboard", "recharts", "chart.js"],
+    ["powerbi", "tableau"],
+)
+_add(
+    "powerbi",
+    "Power BI",
+    "data",
+    ["power bi", "powerbi"],
+    ["tableau", "data_visualization"],
+    parents=["data_visualization"],
+)
 _add("tableau", "Tableau", "data", [], ["powerbi", "data_visualization"], parents=["data_visualization"])
 _add("excel", "Excel", "data", ["ms excel", "microsoft excel", "advanced excel", "spreadsheets"])
-_add("etl", "ETL", "data", ["etl pipelines", "data pipelines", "data pipeline", "elt", "data ingestion"],
-     ["airflow", "spark"])
+_add(
+    "etl",
+    "ETL",
+    "data",
+    ["etl pipelines", "data pipelines", "data pipeline", "elt", "data ingestion"],
+    ["airflow", "spark"],
+)
 _add("spark", "Apache Spark", "data", ["pyspark", "spark"], ["hadoop", "etl"])
 _add("hadoop", "Hadoop", "data", ["hdfs", "mapreduce", "hive"], ["spark"])
 _add("airflow", "Airflow", "data", ["apache airflow"], ["etl"])
 _add("jupyter", "Jupyter", "tool", ["jupyter notebook", "notebooks", "ipython"], ["python"])
 _add("streamlit", "Streamlit", "frontend", [], ["python"])
-_add("statistics", "Statistics", "data", ["statistical analysis", "probability", "hypothesis testing",
-     "regression analysis"], ["data_analysis"])
+_add(
+    "statistics",
+    "Statistics",
+    "data",
+    ["statistical analysis", "probability", "hypothesis testing", "regression analysis"],
+    ["data_analysis"],
+)
 _add("web_scraping", "Web scraping", "data", ["beautifulsoup", "scrapy", "web crawling"], ["python"])
 
 # --- Testing / quality ---------------------------------------------------------------------------
-_add("testing", "Software testing", "testing", ["automated testing", "test automation", "unit testing",
-     "unit tests", "integration testing", "integration tests", "qa", "quality assurance", "test cases",
-     "software testing", "tdd", "test-driven development"], ["pytest", "junit", "jest"])
+_add(
+    "testing",
+    "Software testing",
+    "testing",
+    [
+        "automated testing",
+        "test automation",
+        "unit testing",
+        "unit tests",
+        "integration testing",
+        "integration tests",
+        "qa",
+        "quality assurance",
+        "test cases",
+        "software testing",
+        "tdd",
+        "test-driven development",
+    ],
+    ["pytest", "junit", "jest"],
+)
 _add("pytest", "pytest", "testing", ["py.test"], ["testing"], parents=["testing"])
 _add("junit", "JUnit", "testing", ["mockito", "junit5"], ["testing"], parents=["testing"])
-_add("jest", "Jest", "testing", ["vitest", "react testing library", "testing library"], ["testing"],
-     parents=["testing"])
+_add(
+    "jest", "Jest", "testing", ["vitest", "react testing library", "testing library"], ["testing"], parents=["testing"]
+)
 _add("selenium", "Selenium", "testing", ["webdriver"], ["playwright", "testing"], parents=["testing"])
 _add("playwright", "Playwright", "testing", [], ["selenium", "cypress"], parents=["testing"])
 _add("cypress", "Cypress", "testing", [], ["playwright"], parents=["testing"])
@@ -228,57 +448,213 @@ _add("postman", "Postman", "tool", ["api testing"], ["rest_api"])
 _add("debugging", "Debugging", "concept", ["troubleshooting", "root cause analysis"])
 
 # --- Engineering concepts ------------------------------------------------------------------------
-_add("rest_api", "REST APIs", "concept", ["rest", "restful", "rest api", "rest apis", "restful apis",
-     "restful services", "web services", "api development", "apis", "api design", "http apis"], ["graphql"])
-_add("microservices", "Microservices", "concept", ["microservice", "micro-services", "service-oriented architecture",
-     "soa", "distributed services"], ["rest_api", "docker"])
-_add("system_design", "System design", "concept", ["distributed systems", "scalable systems", "high availability",
-     "scalability", "software architecture"], ["microservices"])
-_add("oop", "Object-oriented programming", "concept", ["oop", "oops", "object oriented", "object-oriented",
-     "object oriented programming", "object-oriented design", "ood"])
-_add("dsa", "Data structures & algorithms", "concept", ["data structures", "algorithms", "dsa",
-     "data structures and algorithms", "problem solving", "competitive programming"])
-_add("dbms", "DBMS", "concept", ["database management systems", "database design", "rdbms", "relational databases",
-     "relational database", "normalization", "database schema"], ["sql"])
-_add("operating_systems", "Operating systems", "concept", ["operating system", "os concepts", "multithreading",
-     "concurrency", "processes and threads"])
-_add("computer_networks", "Computer networks", "concept", ["networking", "tcp/ip", "http", "dns", "computer networking"])
+_add(
+    "rest_api",
+    "REST APIs",
+    "concept",
+    [
+        "rest",
+        "restful",
+        "rest api",
+        "rest apis",
+        "restful apis",
+        "restful services",
+        "web services",
+        "api development",
+        "apis",
+        "api design",
+        "http apis",
+    ],
+    ["graphql"],
+)
+_add(
+    "microservices",
+    "Microservices",
+    "concept",
+    ["microservice", "micro-services", "service-oriented architecture", "soa", "distributed services"],
+    ["rest_api", "docker"],
+)
+_add(
+    "system_design",
+    "System design",
+    "concept",
+    ["distributed systems", "scalable systems", "high availability", "scalability", "software architecture"],
+    ["microservices"],
+)
+_add(
+    "oop",
+    "Object-oriented programming",
+    "concept",
+    [
+        "oop",
+        "oops",
+        "object oriented",
+        "object-oriented",
+        "object oriented programming",
+        "object-oriented design",
+        "ood",
+    ],
+)
+_add(
+    "dsa",
+    "Data structures & algorithms",
+    "concept",
+    [
+        "data structures",
+        "algorithms",
+        "dsa",
+        "data structures and algorithms",
+        "problem solving",
+        "competitive programming",
+    ],
+)
+_add(
+    "dbms",
+    "DBMS",
+    "concept",
+    [
+        "database management systems",
+        "database design",
+        "rdbms",
+        "relational databases",
+        "relational database",
+        "normalization",
+        "database schema",
+    ],
+    ["sql"],
+)
+_add(
+    "operating_systems",
+    "Operating systems",
+    "concept",
+    ["operating system", "os concepts", "multithreading", "concurrency", "processes and threads"],
+)
+_add(
+    "computer_networks", "Computer networks", "concept", ["networking", "tcp/ip", "http", "dns", "computer networking"]
+)
 _add("sdlc", "SDLC", "concept", ["software development life cycle", "software development lifecycle"], ["agile"])
 _add("agile", "Agile", "concept", ["scrum", "kanban", "agile methodologies", "sprint planning", "jira"], ["sdlc"])
-_add("authentication", "Authentication", "security", ["auth", "authentication", "login", "oauth", "oauth2",
-     "openid connect", "sso", "single sign-on", "session management", "password hashing"], ["jwt", "rbac"])
-_add("jwt", "JWT", "security", ["json web token", "json web tokens"], ["authentication"],
-     parents=["authentication"])
-_add("rbac", "Role-based access control", "security", ["rbac", "role-based access control",
-     "role based access control", "authorization", "access control", "permissions"], ["authentication"])
-_add("security", "Application security", "security", ["application security", "owasp", "secure coding",
-     "web security", "idor", "csrf", "xss", "sql injection", "cybersecurity", "cyber security"], ["authentication"])
+_add(
+    "authentication",
+    "Authentication",
+    "security",
+    [
+        "auth",
+        "authentication",
+        "login",
+        "oauth",
+        "oauth2",
+        "openid connect",
+        "sso",
+        "single sign-on",
+        "session management",
+        "password hashing",
+    ],
+    ["jwt", "rbac"],
+)
+_add("jwt", "JWT", "security", ["json web token", "json web tokens"], ["authentication"], parents=["authentication"])
+_add(
+    "rbac",
+    "Role-based access control",
+    "security",
+    [
+        "rbac",
+        "role-based access control",
+        "role based access control",
+        "authorization",
+        "access control",
+        "permissions",
+    ],
+    ["authentication"],
+)
+_add(
+    "security",
+    "Application security",
+    "security",
+    [
+        "application security",
+        "owasp",
+        "secure coding",
+        "web security",
+        "idor",
+        "csrf",
+        "xss",
+        "sql injection",
+        "cybersecurity",
+        "cyber security",
+    ],
+    ["authentication"],
+)
 _add("caching", "Caching", "concept", ["cache", "memcached", "cdn"], ["redis"])
-_add("performance", "Performance optimization", "concept", ["performance tuning", "query optimization",
-     "profiling", "latency"])
-_add("design_patterns", "Design patterns", "concept", ["solid principles", "solid", "clean code", "clean architecture"],
-     ["oop"])
-_add("orm", "ORMs", "concept", ["orm", "sqlalchemy", "prisma", "sequelize", "typeorm", "drizzle", "hibernate orm"],
-     ["sql"])
-_add("db_migrations", "Database migrations", "concept", ["alembic", "flyway", "liquibase", "schema migrations"],
-     ["orm"])
-_add("api_integration", "API integration", "concept", ["third-party apis", "api integrations", "integrations",
-     "webhooks"], ["rest_api"])
-_add("browser_extension", "Browser extensions", "frontend", ["chrome extension", "browser extension",
-     "web extension", "manifest v3"], ["javascript"])
-_add("desktop_apps", "Desktop applications", "frontend", ["desktop application", "electron", "java swing",
-     "swing", "tkinter", "pyqt", "javafx"])
+_add(
+    "performance",
+    "Performance optimization",
+    "concept",
+    ["performance tuning", "query optimization", "profiling", "latency"],
+)
+_add(
+    "design_patterns",
+    "Design patterns",
+    "concept",
+    ["solid principles", "solid", "clean code", "clean architecture"],
+    ["oop"],
+)
+_add(
+    "orm",
+    "ORMs",
+    "concept",
+    ["orm", "sqlalchemy", "prisma", "sequelize", "typeorm", "drizzle", "hibernate orm"],
+    ["sql"],
+)
+_add(
+    "db_migrations", "Database migrations", "concept", ["alembic", "flyway", "liquibase", "schema migrations"], ["orm"]
+)
+_add(
+    "api_integration",
+    "API integration",
+    "concept",
+    ["third-party apis", "api integrations", "integrations", "webhooks"],
+    ["rest_api"],
+)
+_add(
+    "browser_extension",
+    "Browser extensions",
+    "frontend",
+    ["chrome extension", "browser extension", "web extension", "manifest v3"],
+    ["javascript"],
+)
+_add(
+    "desktop_apps",
+    "Desktop applications",
+    "frontend",
+    ["desktop application", "electron", "java swing", "swing", "tkinter", "pyqt", "javafx"],
+)
 _add("cli_tools", "Command-line tools", "concept", ["cli", "command-line", "command line tool"])
-_add("responsive_design", "Responsive design", "frontend", ["responsive web design", "mobile-first", "accessibility",
-     "a11y", "wcag"], ["css"])
-_add("state_management", "Workflow & state management", "concept", ["state machine", "workflow engine",
-     "state management", "workflow automation"])
+_add(
+    "responsive_design",
+    "Responsive design",
+    "frontend",
+    ["responsive web design", "mobile-first", "accessibility", "a11y", "wcag"],
+    ["css"],
+)
+_add(
+    "state_management",
+    "Workflow & state management",
+    "concept",
+    ["state machine", "workflow engine", "state management", "workflow automation"],
+)
 _add("n8n", "n8n", "tool", [], ["api_integration"])
 _add("sap", "SAP", "tool", ["sap erp", "sap s/4hana", "s/4hana", "sap hana", "hana"], ["sap_btp"])
 _add("salesforce", "Salesforce", "tool", ["apex", "salesforce crm"])
 _add("pdf_processing", "PDF processing", "concept", ["pdf parsing", "pdf.js", "pdfjs", "document parsing"])
-_add("speech_to_text", "Speech-to-text", "ml", ["speech recognition", "asr", "whisper", "speech to text"],
-     ["nlp"], parents=["machine_learning"])
+_add(
+    "speech_to_text",
+    "Speech-to-text",
+    "ml",
+    ["speech recognition", "asr", "whisper", "speech to text"],
+    ["nlp"],
+    parents=["machine_learning"],
+)
 
 SKILLS: dict[str, SkillDef] = {s.key: s for s in _S}
 CATEGORY_LABELS = {
@@ -300,58 +676,184 @@ CATEGORY_LABELS = {
 # Package names (lower-case) in dependency manifests -> skill keys.
 PACKAGE_SKILLS: dict[str, tuple[str, ...]] = {
     # Python
-    "fastapi": ("fastapi", "rest_api"), "django": ("django",), "djangorestframework": ("django", "rest_api"),
-    "flask": ("flask",), "sqlalchemy": ("orm",), "alembic": ("db_migrations",), "pydantic": ("python",),
-    "psycopg": ("postgresql",), "psycopg2": ("postgresql",), "psycopg2-binary": ("postgresql",),
-    "asyncpg": ("postgresql",), "pymysql": ("mysql",), "mysql-connector-python": ("mysql",),
-    "pymongo": ("mongodb",), "motor": ("mongodb",), "redis": ("redis",), "celery": ("celery",),
-    "pandas": ("pandas",), "numpy": ("numpy",), "scikit-learn": ("scikit_learn",), "sklearn": ("scikit_learn",),
-    "tensorflow": ("tensorflow",), "tensorflow-cpu": ("tensorflow",), "keras": ("keras",), "torch": ("pytorch",),
-    "torchvision": ("pytorch", "computer_vision"), "transformers": ("huggingface",), "datasets": ("huggingface",),
-    "langchain": ("langchain",), "langgraph": ("langchain", "ai_agents"), "llama-index": ("langchain",),
-    "openai": ("llm",), "google-generativeai": ("llm",), "google-genai": ("llm",), "sentence-transformers": ("nlp",),
-    "faiss-cpu": ("vector_db",), "chromadb": ("vector_db",), "pinecone-client": ("vector_db",),
-    "pgvector": ("vector_db",), "spacy": ("nlp",), "nltk": ("nlp",), "opencv-python": ("opencv",),
-    "opencv-python-headless": ("opencv",), "mediapipe": ("mediapipe",), "xgboost": ("xgboost",),
-    "lightgbm": ("xgboost",), "matplotlib": ("data_visualization",), "seaborn": ("data_visualization",),
-    "plotly": ("data_visualization",), "streamlit": ("streamlit",), "pytest": ("pytest",),
-    "selenium": ("selenium",), "playwright": ("playwright",), "boto3": ("aws",), "beautifulsoup4": ("web_scraping",),
-    "scrapy": ("web_scraping",), "pyspark": ("spark",), "apache-airflow": ("airflow",), "jupyter": ("jupyter",),
-    "pyjwt": ("jwt",), "python-jose": ("jwt",), "passlib": ("authentication",), "argon2-cffi": ("authentication",),
-    "bcrypt": ("authentication",), "websockets": ("websockets",), "grpcio": ("grpc",), "kafka-python": ("kafka",),
-    "pika": ("rabbitmq",), "openai-whisper": ("speech_to_text",), "pylint": ("python",), "gitpython": ("git",),
-    "pypdf": ("pdf_processing",), "pdfplumber": ("pdf_processing",), "pymupdf": ("pdf_processing",),
-    "uvicorn": ("fastapi",), "gunicorn": ("python",), "httpx": ("api_integration",), "requests": ("api_integration",),
-    "tkinter": ("desktop_apps",), "pyqt5": ("desktop_apps",), "pyside6": ("desktop_apps",),
+    "fastapi": ("fastapi", "rest_api"),
+    "django": ("django",),
+    "djangorestframework": ("django", "rest_api"),
+    "flask": ("flask",),
+    "sqlalchemy": ("orm",),
+    "alembic": ("db_migrations",),
+    "pydantic": ("python",),
+    "psycopg": ("postgresql",),
+    "psycopg2": ("postgresql",),
+    "psycopg2-binary": ("postgresql",),
+    "asyncpg": ("postgresql",),
+    "pymysql": ("mysql",),
+    "mysql-connector-python": ("mysql",),
+    "pymongo": ("mongodb",),
+    "motor": ("mongodb",),
+    "redis": ("redis",),
+    "celery": ("celery",),
+    "pandas": ("pandas",),
+    "numpy": ("numpy",),
+    "scikit-learn": ("scikit_learn",),
+    "sklearn": ("scikit_learn",),
+    "tensorflow": ("tensorflow",),
+    "tensorflow-cpu": ("tensorflow",),
+    "keras": ("keras",),
+    "torch": ("pytorch",),
+    "torchvision": ("pytorch", "computer_vision"),
+    "transformers": ("huggingface",),
+    "datasets": ("huggingface",),
+    "langchain": ("langchain",),
+    "langgraph": ("langchain", "ai_agents"),
+    "llama-index": ("langchain",),
+    "openai": ("llm",),
+    "google-generativeai": ("llm",),
+    "google-genai": ("llm",),
+    "sentence-transformers": ("nlp",),
+    "faiss-cpu": ("vector_db",),
+    "chromadb": ("vector_db",),
+    "pinecone-client": ("vector_db",),
+    "pgvector": ("vector_db",),
+    "spacy": ("nlp",),
+    "nltk": ("nlp",),
+    "opencv-python": ("opencv",),
+    "opencv-python-headless": ("opencv",),
+    "mediapipe": ("mediapipe",),
+    "xgboost": ("xgboost",),
+    "lightgbm": ("xgboost",),
+    "matplotlib": ("data_visualization",),
+    "seaborn": ("data_visualization",),
+    "plotly": ("data_visualization",),
+    "streamlit": ("streamlit",),
+    "pytest": ("pytest",),
+    "selenium": ("selenium",),
+    "playwright": ("playwright",),
+    "boto3": ("aws",),
+    "beautifulsoup4": ("web_scraping",),
+    "scrapy": ("web_scraping",),
+    "pyspark": ("spark",),
+    "apache-airflow": ("airflow",),
+    "jupyter": ("jupyter",),
+    "pyjwt": ("jwt",),
+    "python-jose": ("jwt",),
+    "passlib": ("authentication",),
+    "argon2-cffi": ("authentication",),
+    "bcrypt": ("authentication",),
+    "websockets": ("websockets",),
+    "grpcio": ("grpc",),
+    "kafka-python": ("kafka",),
+    "pika": ("rabbitmq",),
+    "openai-whisper": ("speech_to_text",),
+    "pylint": ("python",),
+    "gitpython": ("git",),
+    "pypdf": ("pdf_processing",),
+    "pdfplumber": ("pdf_processing",),
+    "pymupdf": ("pdf_processing",),
+    "uvicorn": ("fastapi",),
+    "gunicorn": ("python",),
+    "httpx": ("api_integration",),
+    "requests": ("api_integration",),
+    "tkinter": ("desktop_apps",),
+    "pyqt5": ("desktop_apps",),
+    "pyside6": ("desktop_apps",),
     # JavaScript / TypeScript
-    "react": ("react",), "react-dom": ("react",), "next": ("nextjs",), "vue": ("vue",), "@angular/core": ("angular",),
-    "svelte": ("svelte",), "@sveltejs/kit": ("svelte",), "express": ("express",), "@nestjs/core": ("nestjs",),
-    "typescript": ("typescript",), "tailwindcss": ("tailwind",), "bootstrap": ("bootstrap",), "vite": ("vite",),
-    "webpack": ("webpack",), "redux": ("redux",), "@reduxjs/toolkit": ("redux",), "mongoose": ("mongodb",),
-    "mongodb": ("mongodb",), "pg": ("postgresql",), "postgres": ("postgresql",), "mysql": ("mysql",),
-    "mysql2": ("mysql",), "sqlite3": ("sqlite",), "better-sqlite3": ("sqlite",), "prisma": ("orm",),
-    "@prisma/client": ("orm",), "drizzle-orm": ("orm",), "sequelize": ("orm",), "typeorm": ("orm",),
-    "drizzle-kit": ("db_migrations",), "knex": ("orm",), "socket.io": ("websockets",), "ws": ("websockets",),
-    "jest": ("jest",), "vitest": ("jest",), "@testing-library/react": ("jest",), "cypress": ("cypress",),
-    "@playwright/test": ("playwright",), "three": ("threejs",),
-    "@react-three/fiber": ("threejs",), "d3": ("d3",), "chart.js": ("data_visualization",),
-    "recharts": ("data_visualization",), "firebase": ("firebase",), "@supabase/supabase-js": ("supabase",),
-    "jsonwebtoken": ("jwt",), "passport": ("authentication",),
-    "bcryptjs": ("authentication",), "graphql": ("graphql",), "@apollo/server": ("graphql",),
-    "@apollo/client": ("graphql",), "electron": ("desktop_apps",), "react-native": ("react_native",),
-    "@tensorflow/tfjs": ("tensorflow",), "@mediapipe/tasks-vision": ("mediapipe",), "@mediapipe/hands": ("mediapipe",), "@google/generative-ai": ("llm",), "@google/genai": ("llm",),
-    "@langchain/core": ("langchain",), "pdfjs-dist": ("pdf_processing",), "pdf-parse": ("pdf_processing",),
-    "mammoth": ("pdf_processing",), "@sap/cds": ("sap_cap",), "@sap/cds-dk": ("sap_cap",), "@ui5/cli": ("sapui5",), "ioredis": ("redis",), "bullmq": ("message_queues",), "kafkajs": ("kafka",),
-    "amqplib": ("rabbitmq",), "aws-sdk": ("aws",), "@aws-sdk/client-s3": ("aws_s3",), "zod": ("typescript",),
-    "@tanstack/react-query": ("react",), "react-router-dom": ("react",), "googleapis": ("api_integration",),
-    "stripe": ("api_integration",), "nodemailer": ("api_integration",), "puppeteer": ("web_scraping",),
+    "react": ("react",),
+    "react-dom": ("react",),
+    "next": ("nextjs",),
+    "vue": ("vue",),
+    "@angular/core": ("angular",),
+    "svelte": ("svelte",),
+    "@sveltejs/kit": ("svelte",),
+    "express": ("express",),
+    "@nestjs/core": ("nestjs",),
+    "typescript": ("typescript",),
+    "tailwindcss": ("tailwind",),
+    "bootstrap": ("bootstrap",),
+    "vite": ("vite",),
+    "webpack": ("webpack",),
+    "redux": ("redux",),
+    "@reduxjs/toolkit": ("redux",),
+    "mongoose": ("mongodb",),
+    "mongodb": ("mongodb",),
+    "pg": ("postgresql",),
+    "postgres": ("postgresql",),
+    "mysql": ("mysql",),
+    "mysql2": ("mysql",),
+    "sqlite3": ("sqlite",),
+    "better-sqlite3": ("sqlite",),
+    "prisma": ("orm",),
+    "@prisma/client": ("orm",),
+    "drizzle-orm": ("orm",),
+    "sequelize": ("orm",),
+    "typeorm": ("orm",),
+    "drizzle-kit": ("db_migrations",),
+    "knex": ("orm",),
+    "socket.io": ("websockets",),
+    "ws": ("websockets",),
+    "jest": ("jest",),
+    "vitest": ("jest",),
+    "@testing-library/react": ("jest",),
+    "cypress": ("cypress",),
+    "@playwright/test": ("playwright",),
+    "three": ("threejs",),
+    "@react-three/fiber": ("threejs",),
+    "d3": ("d3",),
+    "chart.js": ("data_visualization",),
+    "recharts": ("data_visualization",),
+    "firebase": ("firebase",),
+    "@supabase/supabase-js": ("supabase",),
+    "jsonwebtoken": ("jwt",),
+    "passport": ("authentication",),
+    "bcryptjs": ("authentication",),
+    "graphql": ("graphql",),
+    "@apollo/server": ("graphql",),
+    "@apollo/client": ("graphql",),
+    "electron": ("desktop_apps",),
+    "react-native": ("react_native",),
+    "@tensorflow/tfjs": ("tensorflow",),
+    "@mediapipe/tasks-vision": ("mediapipe",),
+    "@mediapipe/hands": ("mediapipe",),
+    "@google/generative-ai": ("llm",),
+    "@google/genai": ("llm",),
+    "@langchain/core": ("langchain",),
+    "pdfjs-dist": ("pdf_processing",),
+    "pdf-parse": ("pdf_processing",),
+    "mammoth": ("pdf_processing",),
+    "@sap/cds": ("sap_cap",),
+    "@sap/cds-dk": ("sap_cap",),
+    "@ui5/cli": ("sapui5",),
+    "ioredis": ("redis",),
+    "bullmq": ("message_queues",),
+    "kafkajs": ("kafka",),
+    "amqplib": ("rabbitmq",),
+    "aws-sdk": ("aws",),
+    "@aws-sdk/client-s3": ("aws_s3",),
+    "zod": ("typescript",),
+    "@tanstack/react-query": ("react",),
+    "react-router-dom": ("react",),
+    "googleapis": ("api_integration",),
+    "stripe": ("api_integration",),
+    "nodemailer": ("api_integration",),
+    "puppeteer": ("web_scraping",),
     # JVM
-    "spring-boot-starter-web": ("spring_boot", "rest_api"), "spring-boot-starter": ("spring_boot",),
-    "spring-boot-starter-data-jpa": ("hibernate",), "spring-boot-starter-security": ("authentication",),
-    "spring-boot-starter-test": ("junit",), "junit": ("junit",), "junit-jupiter": ("junit",), "mockito-core": ("junit",),
-    "mysql-connector-java": ("mysql",), "mysql-connector-j": ("mysql",), "postgresql": ("postgresql",),
-    "sqlite-jdbc": ("sqlite",), "hibernate-core": ("hibernate",), "jjwt": ("jwt",), "jjwt-api": ("jwt",),
-    "kafka-clients": ("kafka",), "lombok": ("java",),
+    "spring-boot-starter-web": ("spring_boot", "rest_api"),
+    "spring-boot-starter": ("spring_boot",),
+    "spring-boot-starter-data-jpa": ("hibernate",),
+    "spring-boot-starter-security": ("authentication",),
+    "spring-boot-starter-test": ("junit",),
+    "junit": ("junit",),
+    "junit-jupiter": ("junit",),
+    "mockito-core": ("junit",),
+    "mysql-connector-java": ("mysql",),
+    "mysql-connector-j": ("mysql",),
+    "postgresql": ("postgresql",),
+    "sqlite-jdbc": ("sqlite",),
+    "hibernate-core": ("hibernate",),
+    "jjwt": ("jwt",),
+    "jjwt-api": ("jwt",),
+    "kafka-clients": ("kafka",),
+    "lombok": ("java",),
 }
 
 # Files or paths in a repository tree -> (skill keys, human-readable reason).
@@ -392,24 +894,61 @@ FILE_MARKERS: list[tuple[re.Pattern, tuple[str, ...], str]] = [
 
 # Files whose names suggest a concept. These produce *inferred* evidence only.
 CONCEPT_FILE_HINTS: list[tuple[re.Pattern, str, str]] = [
-    (re.compile(r"(^|/)(rbac|roles?|permissions?|authorization|policies)(\.\w+|/)", re.I), "rbac",
-     "role/permission modules in the source tree"),
-    (re.compile(r"(^|/)(auth|authentication|login|security)(\.\w+|/)", re.I), "authentication",
-     "authentication modules in the source tree"),
-    (re.compile(r"(^|/)(workers?|queue|jobs|tasks)(\.\w+|/)", re.I), "message_queues",
-     "background worker / queue modules in the source tree"),
-    (re.compile(r"(^|/)(routers?|routes|controllers?|endpoints|api)(/|\.\w+$)", re.I), "rest_api",
-     "API route/controller modules in the source tree"),
+    (
+        re.compile(r"(^|/)(rbac|roles?|permissions?|authorization|policies)(\.\w+|/)", re.I),
+        "rbac",
+        "role/permission modules in the source tree",
+    ),
+    (
+        re.compile(r"(^|/)(auth|authentication|login|security)(\.\w+|/)", re.I),
+        "authentication",
+        "authentication modules in the source tree",
+    ),
+    (
+        re.compile(r"(^|/)(workers?|queue|jobs|tasks)(\.\w+|/)", re.I),
+        "message_queues",
+        "background worker / queue modules in the source tree",
+    ),
+    (
+        re.compile(r"(^|/)(routers?|routes|controllers?|endpoints|api)(/|\.\w+$)", re.I),
+        "rest_api",
+        "API route/controller modules in the source tree",
+    ),
     (re.compile(r"(^|/)manifest\.json$", re.I), "browser_extension", "a manifest.json (possibly a browser extension)"),
 ]
 
 # Languages as GitHub reports them -> skill keys.
 GITHUB_LANGUAGES = {
-    "Python": "python", "Java": "java", "JavaScript": "javascript", "TypeScript": "typescript", "C++": "cpp",
-    "C": "c", "C#": "csharp", "Go": "go", "Rust": "rust", "Kotlin": "kotlin", "Swift": "swift", "Ruby": "ruby",
-    "PHP": "php", "Scala": "scala", "R": "r", "MATLAB": "matlab", "Shell": "bash", "HTML": "html", "CSS": "css",
-    "SCSS": "css", "Dart": "dart", "Jupyter Notebook": "jupyter", "Dockerfile": "docker", "PLpgSQL": "postgresql",
-    "TSQL": "sql", "ABAP": "abap", "Solidity": "solidity", "Vue": "vue", "Svelte": "svelte", "HCL": "terraform",
+    "Python": "python",
+    "Java": "java",
+    "JavaScript": "javascript",
+    "TypeScript": "typescript",
+    "C++": "cpp",
+    "C": "c",
+    "C#": "csharp",
+    "Go": "go",
+    "Rust": "rust",
+    "Kotlin": "kotlin",
+    "Swift": "swift",
+    "Ruby": "ruby",
+    "PHP": "php",
+    "Scala": "scala",
+    "R": "r",
+    "MATLAB": "matlab",
+    "Shell": "bash",
+    "HTML": "html",
+    "CSS": "css",
+    "SCSS": "css",
+    "Dart": "dart",
+    "Jupyter Notebook": "jupyter",
+    "Dockerfile": "docker",
+    "PLpgSQL": "postgresql",
+    "TSQL": "sql",
+    "ABAP": "abap",
+    "Solidity": "solidity",
+    "Vue": "vue",
+    "Svelte": "svelte",
+    "HCL": "terraform",
     "CAP CDS": "sap_cap",
 }
 
@@ -435,8 +974,10 @@ def _alias_regex(alias: str, strict: bool) -> re.Pattern:
     body = re.escape(alias).replace(r"\ ", r"[\s-]+")
     if strict:
         # Strict aliases (single letters, common words) only count inside skill lists: "Python, R, SQL".
-        return re.compile(rf"(?:(?<=[,/(|:])|(?<=,\s)|(?<=\band\s)|(?<=\bor\s)|(?<=^))\s*{body}(?=\s*(?:[,/)|;]|$|\band\b|\bor\b))",
-                          re.M)
+        return re.compile(
+            rf"(?:(?<=[,/(|:])|(?<=,\s)|(?<=\band\s)|(?<=\bor\s)|(?<=^))\s*{body}(?=\s*(?:[,/)|;]|$|\band\b|\bor\b))",
+            re.M,
+        )
     return re.compile(_BOUND_L + body + _BOUND_R, re.I)
 
 
@@ -461,12 +1002,66 @@ def _matcher() -> _Matcher:
 
 
 # Aliases that are too generic to count on their own outside explicit skill lists.
-_WEAK_ALIASES = {"node", "spring", "rest", "cap", "apis", "auth", "login", "cache", "cli", "analytics", "dashboard",
-                 "dashboards", "notebooks", "permissions", "integrations", "logging", "http", "networking", "ml", "dl", "concurrency", "multithreading",
-                 "bootstrap", "render", "express", "vite", "agile", "scrum", "kanban", "testing", "security",
-                 "ts", "tf", "solid", "jira", "fiori", "transformers", "mongo", "hive", "hana", "sprint planning",
-                 "authorization", "access control", "problem solving", "algorithms", "containers", "llm", "gpt",
-                 "rag", "api testing", "asr", "orm", "iac", "soa", "eda", "qa", "sso", "dns"}
+_WEAK_ALIASES = {
+    "node",
+    "spring",
+    "rest",
+    "cap",
+    "apis",
+    "auth",
+    "login",
+    "cache",
+    "cli",
+    "analytics",
+    "dashboard",
+    "dashboards",
+    "notebooks",
+    "permissions",
+    "integrations",
+    "logging",
+    "http",
+    "networking",
+    "ml",
+    "dl",
+    "concurrency",
+    "multithreading",
+    "bootstrap",
+    "render",
+    "express",
+    "vite",
+    "agile",
+    "scrum",
+    "kanban",
+    "testing",
+    "security",
+    "ts",
+    "tf",
+    "solid",
+    "jira",
+    "fiori",
+    "transformers",
+    "mongo",
+    "hive",
+    "hana",
+    "sprint planning",
+    "authorization",
+    "access control",
+    "problem solving",
+    "algorithms",
+    "containers",
+    "llm",
+    "gpt",
+    "rag",
+    "api testing",
+    "asr",
+    "orm",
+    "iac",
+    "soa",
+    "eda",
+    "qa",
+    "sso",
+    "dns",
+}
 
 
 def find_skills(text: str, *, include_weak: bool = True) -> list[TermMatch]:

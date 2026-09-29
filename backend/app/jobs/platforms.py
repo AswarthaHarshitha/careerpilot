@@ -92,6 +92,7 @@ def fetch_posting(url: str) -> RawPosting:
 
 # --- Greenhouse -----------------------------------------------------------------------------------
 
+
 def _greenhouse(url: str) -> RawPosting | None:
     parts = urlsplit(url)
     m = re.search(r"/([\w-]+)/jobs/(\d+)", parts.path)
@@ -102,8 +103,9 @@ def _greenhouse(url: str) -> RawPosting | None:
         board = (q.get("for") or q.get("board") or [None])[0]
     if not (board and job_id):
         return None
-    res = fetch(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}?questions=true",
-                accept="application/json")
+    res = fetch(
+        f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}?questions=true", accept="application/json"
+    )
     d = json.loads(res.body)
     company = board
     try:
@@ -125,6 +127,7 @@ def _greenhouse(url: str) -> RawPosting | None:
 
 
 # --- Lever ----------------------------------------------------------------------------------------
+
 
 def _lever(url: str) -> RawPosting | None:
     m = re.search(r"lever\.co/([\w.-]+)/([0-9a-f-]{36})", url)
@@ -155,6 +158,7 @@ def _lever(url: str) -> RawPosting | None:
 
 # --- Ashby ----------------------------------------------------------------------------------------
 
+
 def _ashby(url: str) -> RawPosting | None:
     m = re.search(r"jobs\.ashbyhq\.com/([^/]+)/([0-9a-f-]{36})", url)
     if not m:
@@ -181,13 +185,15 @@ def _ashby(url: str) -> RawPosting | None:
 
 # --- SmartRecruiters ------------------------------------------------------------------------------
 
+
 def _smartrecruiters(url: str) -> RawPosting | None:
     m = re.search(r"smartrecruiters\.com/([^/]+)/(\d+)", url)
     if not m:
         return None
     company, pid = m.groups()
-    d = json.loads(fetch(f"https://api.smartrecruiters.com/v1/companies/{company}/postings/{pid}",
-                         accept="application/json").body)
+    d = json.loads(
+        fetch(f"https://api.smartrecruiters.com/v1/companies/{company}/postings/{pid}", accept="application/json").body
+    )
     sections = (d.get("jobAd") or {}).get("sections") or {}
     parts = []
     for key in ("jobDescription", "qualifications", "additionalInformation"):
@@ -212,6 +218,7 @@ def _smartrecruiters(url: str) -> RawPosting | None:
 
 
 # --- Workday --------------------------------------------------------------------------------------
+
 
 def _workday(url: str) -> RawPosting | None:
     parts = urlsplit(url)
@@ -247,11 +254,13 @@ def _workday(url: str) -> RawPosting | None:
 
 # --- Generic page ---------------------------------------------------------------------------------
 
+
 def _generic(url: str, platform: str) -> RawPosting:
     res = fetch(url)
     if "json" in res.content_type:
-        raise ExternalFetchError("The link returned data instead of a job page.",
-                                 hint="Paste the job description instead.")
+        raise ExternalFetchError(
+            "The link returned data instead of a job page.", hint="Paste the job description instead."
+        )
     orc = _oracle_from_page(res.text, res.url)
     if orc:
         return orc
@@ -317,7 +326,9 @@ def _parse_html(html: str, page_url: str, platform: str) -> RawPosting:
 
 # --- Oracle Recruiting Cloud (Oracle HCM Candidate Experience) ------------------------------------
 
-_ORC_PATH = re.compile(r"/hcmUI/CandidateExperience/[a-z-]+/sites/(CX(?:_\d+)?)/(?:job|requisitions/preview)/(\d+)", re.I)
+_ORC_PATH = re.compile(
+    r"/hcmUI/CandidateExperience/[a-z-]+/sites/(CX(?:_\d+)?)/(?:job|requisitions/preview)/(\d+)", re.I
+)
 
 
 def _oracle_from_page(html: str, page_url: str) -> RawPosting | None:
@@ -343,8 +354,10 @@ def _oracle_from_page(html: str, page_url: str) -> RawPosting | None:
 
 
 def _oracle(api_base: str, site: str, job_id: str, page_url: str, company: str = "") -> RawPosting | None:
-    api = (f"{api_base}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true"
-           f'&finder=ById;Id="{job_id}",siteNumber={site}')
+    api = (
+        f"{api_base}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true"
+        f'&finder=ById;Id="{job_id}",siteNumber={site}'
+    )
     try:
         data = json.loads(fetch(api, accept="application/json").body)
     except (ExternalFetchError, ValueError):
@@ -354,16 +367,25 @@ def _oracle(api_base: str, site: str, job_id: str, page_url: str, company: str =
         return None
     d = items[0]
     parts = []
-    for title, key in (("About the role", "ExternalDescriptionStr"), ("Responsibilities", "ExternalResponsibilitiesStr"),
-                       ("Qualifications", "ExternalQualificationsStr")):
+    for title, key in (
+        ("About the role", "ExternalDescriptionStr"),
+        ("Responsibilities", "ExternalResponsibilitiesStr"),
+        ("Qualifications", "ExternalQualificationsStr"),
+    ):
         text = html_to_text(d.get(key) or "")
         if text and len(text) > 20:
             parts.append(f"## {title}\n{text}")
-    locations = [d.get("PrimaryLocation") or ""] + [x.get("Name", "") for x in (d.get("secondaryLocations") or [])
-                                                   if isinstance(x, dict)]
+    locations = [d.get("PrimaryLocation") or ""] + [
+        x.get("Name", "") for x in (d.get("secondaryLocations") or []) if isinstance(x, dict)
+    ]
     workplace = (d.get("WorkplaceTypeCode") or d.get("WorkplaceType") or "").lower()
-    workplace = "remote" if "remote" in workplace else "hybrid" if "hybrid" in workplace else (
-        "onsite" if "site" in workplace else "")
+    workplace = (
+        "remote"
+        if "remote" in workplace
+        else "hybrid"
+        if "hybrid" in workplace
+        else ("onsite" if "site" in workplace else "")
+    )
     end = _date(d.get("ExternalPostedEndDate"))
     return RawPosting(
         platform="oracle",
@@ -402,15 +424,26 @@ def _ld_location(ld: dict) -> str:
     for item in locs:
         addr = item.get("address") if isinstance(item, dict) else None
         if isinstance(addr, dict):
-            out.append(", ".join(_s(addr.get(k)) for k in ("addressLocality", "addressRegion", "addressCountry")
-                                 if _s(addr.get(k))))
+            out.append(
+                ", ".join(
+                    _s(addr.get(k)) for k in ("addressLocality", "addressRegion", "addressCountry") if _s(addr.get(k))
+                )
+            )
         elif isinstance(addr, str):
             out.append(addr)
     return " / ".join(o for o in out if o)
 
 
-_EMPLOYMENT = {"FULL_TIME": "Full-time", "PART_TIME": "Part-time", "CONTRACTOR": "Contract", "TEMPORARY": "Temporary",
-               "INTERN": "Internship", "VOLUNTEER": "Volunteer", "PER_DIEM": "Per diem", "OTHER": "Other"}
+_EMPLOYMENT = {
+    "FULL_TIME": "Full-time",
+    "PART_TIME": "Part-time",
+    "CONTRACTOR": "Contract",
+    "TEMPORARY": "Temporary",
+    "INTERN": "Internship",
+    "VOLUNTEER": "Volunteer",
+    "PER_DIEM": "Per diem",
+    "OTHER": "Other",
+}
 
 
 def _employment(v) -> str:

@@ -7,8 +7,31 @@ matching, never listed in a resume's Projects section. The portfolio may only ap
 
 import re
 
-PROFILE_WORDS = {"portfolio", "personal", "website", "site", "web", "page", "homepage", "my", "me", "resume", "cv",
-                 "dev", "v1", "v2", "v3", "new", "old", "official", "profile", "app", "react", "next", "nextjs"}
+PROFILE_WORDS = {
+    "portfolio",
+    "personal",
+    "website",
+    "site",
+    "web",
+    "page",
+    "homepage",
+    "my",
+    "me",
+    "resume",
+    "cv",
+    "dev",
+    "v1",
+    "v2",
+    "v3",
+    "new",
+    "old",
+    "official",
+    "profile",
+    "app",
+    "react",
+    "next",
+    "nextjs",
+}
 ANCHOR_WORDS = {"portfolio", "website", "homepage", "profile"}
 
 
@@ -23,8 +46,9 @@ def _looks_like_portfolio(name: str, owner: str) -> bool:
     return all(t in PROFILE_WORDS or t in owner_parts or re.fullmatch(r"(19|20)\d{2}", t) for t in low)
 
 
-def is_personal_profile(repo_name: str, full_name: str = "", homepage: str = "", github_username: str = "",
-                        portfolio_url: str = "") -> bool:
+def is_personal_profile(
+    repo_name: str, full_name: str = "", homepage: str = "", github_username: str = "", portfolio_url: str = ""
+) -> bool:
     name = (repo_name or "").strip()
     full_name, homepage = full_name or "", homepage or ""
     owner = (full_name.split("/")[0] if "/" in full_name else github_username) or ""
@@ -34,9 +58,7 @@ def is_personal_profile(repo_name: str, full_name: str = "", homepage: str = "",
         return True
     if name.lower().endswith(".github.io"):
         return True
-    if portfolio_url and homepage and _same_site(portfolio_url, homepage):
-        return True
-    return False
+    return bool(portfolio_url and homepage and _same_site(portfolio_url, homepage))
 
 
 def _same_site(a: str, b: str) -> bool:
@@ -46,8 +68,9 @@ def _same_site(a: str, b: str) -> bool:
 
 def apply_classification(project, *, github_username: str = "", portfolio_url: str = "") -> bool:
     """Locks the project as a personal profile asset when the rule matches. Returns True if it did."""
-    if is_personal_profile(project.name or "", project.repo_full_name or "", project.homepage_url or "",
-                           github_username, portfolio_url):
+    if is_personal_profile(
+        project.name or "", project.repo_full_name or "", project.homepage_url or "", github_username, portfolio_url
+    ):
         project.asset_type = "personal_profile"
         project.asset_type_locked = True
         project.resume_eligible = False

@@ -22,13 +22,21 @@ from app.resume.latex_syntax import strip_comments
 log = logging.getLogger(__name__)
 
 _DANGEROUS = [
-    (re.compile(r"\\write18|\\immediate\s*\\write|\\openout|\\openin|\\read\s*\d|\\directlua|\\luaexec|"
-                r"\\ShellEscape|\\pdfshellescape"),
-     "runs shell commands or writes files"),
-    (re.compile(r"\\(?:input|include|InputIfFileExists|IfFileExists|lstinputlisting|verbatiminput|import|subimport|"
-                r"includegraphics|includepdf|addbibresource|bibliography)\s*(?:\[[^\]]*\])?\s*\{\s*(?:/|~|[A-Za-z]:\\|"
-                r"[^}]*\.\.)"),
-     "reads files outside the template"),
+    (
+        re.compile(
+            r"\\write18|\\immediate\s*\\write|\\openout|\\openin|\\read\s*\d|\\directlua|\\luaexec|"
+            r"\\ShellEscape|\\pdfshellescape"
+        ),
+        "runs shell commands or writes files",
+    ),
+    (
+        re.compile(
+            r"\\(?:input|include|InputIfFileExists|IfFileExists|lstinputlisting|verbatiminput|import|subimport|"
+            r"includegraphics|includepdf|addbibresource|bibliography)\s*(?:\[[^\]]*\])?\s*\{\s*(?:/|~|[A-Za-z]:\\|"
+            r"[^}]*\.\.)"
+        ),
+        "reads files outside the template",
+    ),
     (re.compile(r"\\(?:include|includeonly)\s*\{"), "includes other .tex files, which are not uploaded"),
 ]
 # Local file inputs a single uploaded file cannot satisfy (distribution files like glyphtounicode are fine).
@@ -46,8 +54,10 @@ def check_template_safety(src: str) -> list[str]:
     for m in _LOCAL_INPUT.finditer(body):
         name = m.group(1).strip()
         if name not in _ALLOWED_INPUTS:
-            problems.append(f"The template inputs `{name}`. Only a single self-contained .tex file can be used; "
-                            "paste that file's contents into the template instead.")
+            problems.append(
+                f"The template inputs `{name}`. Only a single self-contained .tex file can be used; "
+                "paste that file's contents into the template instead."
+            )
     return problems
 
 
@@ -105,7 +115,9 @@ def compile_latex(src: str, aux_files: dict[str, str] | None = None) -> CompileR
                 with open(os.path.join(tmp, safe), "w", encoding="utf-8") as fh:
                     fh.write(content)
         # Overleaf projects often reference a bibliography file the resume never cites; supply an empty one.
-        for name in re.findall(r"\\(?:addbibresource|bibliography)\s*(?:\[[^\]]*\])?\{([\w.-]+)\}", strip_comments(src)):
+        for name in re.findall(
+            r"\\(?:addbibresource|bibliography)\s*(?:\[[^\]]*\])?\{([\w.-]+)\}", strip_comments(src)
+        ):
             fname = name if name.endswith(".bib") else name + ".bib"
             if os.path.exists(os.path.join(tmp, fname)):
                 continue

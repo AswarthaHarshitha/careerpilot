@@ -20,7 +20,9 @@ def resume_filename(db: Session, v: ResumeVersion, ext: str) -> str:
     profile = db.scalar(select(UserProfile).where(UserProfile.user_id == v.user_id))
     name = ""
     if profile:
-        name = "_".join(x for x in (_part(profile.first_name), _part(profile.last_name)) if x) or _part(profile.full_name)
+        name = "_".join(x for x in (_part(profile.first_name), _part(profile.last_name)) if x) or _part(
+            profile.full_name
+        )
     job = db.get(Job, v.job_id) if v.job_id else None
     parts = [name or "Resume", "Resume" if name else ""]
     if job:

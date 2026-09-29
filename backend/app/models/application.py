@@ -18,8 +18,16 @@ APPLICATION_STATUSES = (
     "withdrawn",
     "offer",
 )
-ACTIVE_STATUSES = ("saved", "analyzing", "resume_ready", "ready_to_apply", "in_progress", "submitted", "assessment",
-                   "interview")
+ACTIVE_STATUSES = (
+    "saved",
+    "analyzing",
+    "resume_ready",
+    "ready_to_apply",
+    "in_progress",
+    "submitted",
+    "assessment",
+    "interview",
+)
 
 
 class ResumeVersion(Base):

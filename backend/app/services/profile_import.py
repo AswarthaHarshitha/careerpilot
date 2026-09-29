@@ -55,8 +55,16 @@ def get_or_create_profile(db: Session, user_id: int) -> UserProfile:
 
 def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict:
     s = tpl.structure
-    counts = {"profile_fields": 0, "experiences": 0, "projects_linked": 0, "projects_created": 0, "skills": 0,
-              "education": 0, "certifications": 0, "achievements": 0}
+    counts = {
+        "profile_fields": 0,
+        "experiences": 0,
+        "projects_linked": 0,
+        "projects_created": 0,
+        "skills": 0,
+        "education": 0,
+        "certifications": 0,
+        "achievements": 0,
+    }
     profile = get_or_create_profile(db, user_id)
     header = s.get("header", {})
 
@@ -87,7 +95,9 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
     if settings and gh and not settings.github_username:
         settings.github_username = gh.group(1)
 
-    existing_exp = {_norm(e.organization): e for e in db.scalars(select(Experience).where(Experience.user_id == user_id))}
+    existing_exp = {
+        _norm(e.organization): e for e in db.scalars(select(Experience).where(Experience.user_id == user_id))
+    }
     existing_edu = {_norm(e.institution) for e in db.scalars(select(Education).where(Education.user_id == user_id))}
     existing_skills = {sk.canonical for sk in db.scalars(select(Skill).where(Skill.user_id == user_id))}
     existing_certs = {_norm(c.name) for c in db.scalars(select(Certification).where(Certification.user_id == user_id))}
@@ -105,9 +115,16 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
                 if not org or _norm(org) in existing_exp:
                     continue
                 start, end, current = split_dates(f.get("dates", ""))
-                exp = Experience(user_id=user_id, organization=org[:200], title=f.get("secondary", "")[:200],
-                                 location=f.get("location", "")[:200], start_date=start[:40], end_date=end[:40],
-                                 is_current=current, sort_order=pos)
+                exp = Experience(
+                    user_id=user_id,
+                    organization=org[:200],
+                    title=f.get("secondary", "")[:200],
+                    location=f.get("location", "")[:200],
+                    start_date=start[:40],
+                    end_date=end[:40],
+                    is_current=current,
+                    sort_order=pos,
+                )
                 exp.bullets = [ExperienceBullet(text=it["text"], sort_order=i) for i, it in enumerate(e["items"])]
                 db.add(exp)
                 existing_exp[_norm(org)] = exp
@@ -126,11 +143,16 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
                     if not title:
                         continue
                     url = f.get("url", "")
-                    project = Project(user_id=user_id, name=f.get("short_name") or title, display_name=title[:200],
-                                      slug=_unique_slug(db, user_id, slugify(f.get("short_name") or title)),
-                                      origin="manual", repo_url=url if "github.com" in url else "",
-                                      homepage_url=url if url and "github.com" not in url else "",
-                                      description=f.get("tech", ""))
+                    project = Project(
+                        user_id=user_id,
+                        name=f.get("short_name") or title,
+                        display_name=title[:200],
+                        slug=_unique_slug(db, user_id, slugify(f.get("short_name") or title)),
+                        origin="manual",
+                        repo_url=url if "github.com" in url else "",
+                        homepage_url=url if url and "github.com" not in url else "",
+                        description=f.get("tech", ""),
+                    )
                     db.add(project)
                     db.flush()
                     projects.append(project)
@@ -140,16 +162,24 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
                     if not project.display_name or project.display_name == project.name:
                         project.display_name = f.get("primary", project.display_name)[:200]
                 if not project.bullets and bullets:
-                    project.bullets = [ProjectBullet(text=b, source="template_import", sort_order=i)
-                                       for i, b in enumerate(bullets)]
+                    project.bullets = [
+                        ProjectBullet(text=b, source="template_import", sort_order=i) for i, b in enumerate(bullets)
+                    ]
         elif layout == "skills":
             for c in sec["skills"]:
                 for pos, item in enumerate(c["items"]):
                     key = canonicalize(item)
                     if not key or key in existing_skills:
                         continue
-                    db.add(Skill(user_id=user_id, name=item[:100], canonical=key[:100], category=c["name"][:80],
-                                 sort_order=pos))
+                    db.add(
+                        Skill(
+                            user_id=user_id,
+                            name=item[:100],
+                            canonical=key[:100],
+                            category=c["name"][:80],
+                            sort_order=pos,
+                        )
+                    )
                     existing_skills.add(key)
                     counts["skills"] += 1
         elif kind == "education" and layout == "entries":
@@ -160,10 +190,19 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
                     continue
                 start, end, _ = split_dates(f.get("dates", ""))
                 years = re.findall(r"(?:19|20)\d{2}", f.get("dates", ""))
-                db.add(Education(user_id=user_id, institution=inst[:200], degree=f.get("secondary", "")[:200],
-                                 start_date=start[:40], end_date=end[:40],
-                                 graduation_year=int(years[-1]) if years else None, grade=f.get("grade", "")[:80],
-                                 location=f.get("location", "")[:200], sort_order=pos))
+                db.add(
+                    Education(
+                        user_id=user_id,
+                        institution=inst[:200],
+                        degree=f.get("secondary", "")[:200],
+                        start_date=start[:40],
+                        end_date=end[:40],
+                        graduation_year=int(years[-1]) if years else None,
+                        grade=f.get("grade", "")[:80],
+                        location=f.get("location", "")[:200],
+                        sort_order=pos,
+                    )
+                )
                 existing_edu.add(_norm(inst))
                 counts["education"] += 1
         elif kind == "education" and layout == "table":
@@ -178,15 +217,26 @@ def import_from_template(db: Session, user_id: int, tpl: ResumeTemplate) -> dict
                 if _norm(inst) in existing_edu:
                     continue
                 yrs = re.findall(r"(?:19|20)\d{2}", " ".join(years))
-                db.add(Education(user_id=user_id, institution=inst.strip()[:200], degree=degree.strip()[:200],
-                                 start_date=yrs[0] if len(yrs) > 1 else "", end_date=yrs[-1] if yrs else "",
-                                 graduation_year=int(yrs[-1]) if yrs else None, grade=grade.strip()[:80],
-                                 sort_order=pos))
+                db.add(
+                    Education(
+                        user_id=user_id,
+                        institution=inst.strip()[:200],
+                        degree=degree.strip()[:200],
+                        start_date=yrs[0] if len(yrs) > 1 else "",
+                        end_date=yrs[-1] if yrs else "",
+                        graduation_year=int(yrs[-1]) if yrs else None,
+                        grade=grade.strip()[:80],
+                        sort_order=pos,
+                    )
+                )
                 existing_edu.add(_norm(inst))
                 counts["education"] += 1
         elif kind in ("certifications", "achievements") and layout in ("items", "entries"):
-            texts = ([it["text"] for it in sec.get("items", [])] if layout == "items"
-                     else [e["fields"].get("primary", "") for e in sec["entries"]])
+            texts = (
+                [it["text"] for it in sec.get("items", [])]
+                if layout == "items"
+                else [e["fields"].get("primary", "") for e in sec["entries"]]
+            )
             for pos, t in enumerate(texts):
                 t = t.strip()
                 if not t:

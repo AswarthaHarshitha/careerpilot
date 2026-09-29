@@ -41,20 +41,77 @@ SECTION_KINDS: list[tuple[str, re.Pattern]] = [
 
 # Macros that format text rather than start a resume entry.
 FORMATTING = {
-    "textbf", "textit", "emph", "underline", "href", "url", "small", "large", "Large", "LARGE", "huge", "Huge",
-    "footnotesize", "scriptsize", "normalsize", "tiny", "vspace", "hspace", "hfill", "textcolor", "color",
-    "begin", "end", "item", "textsc", "scshape", "bfseries", "itshape", "raggedright", "centering", "newline",
-    "linebreak", "noindent", "par", "fontsize", "selectfont", "textsf", "texttt", "mbox", "makebox", "raisebox",
-    "setlength", "addtolength", "rule", "titlerule", "quad", "qquad", "textbar", "vert", "cdot", "bullet",
-    "faGithub", "faLinkedin", "faPhone", "faEnvelope", "faGlobe", "faExternalLink", "faLink", "input", "label",
+    "textbf",
+    "textit",
+    "emph",
+    "underline",
+    "href",
+    "url",
+    "small",
+    "large",
+    "Large",
+    "LARGE",
+    "huge",
+    "Huge",
+    "footnotesize",
+    "scriptsize",
+    "normalsize",
+    "tiny",
+    "vspace",
+    "hspace",
+    "hfill",
+    "textcolor",
+    "color",
+    "begin",
+    "end",
+    "item",
+    "textsc",
+    "scshape",
+    "bfseries",
+    "itshape",
+    "raggedright",
+    "centering",
+    "newline",
+    "linebreak",
+    "noindent",
+    "par",
+    "fontsize",
+    "selectfont",
+    "textsf",
+    "texttt",
+    "mbox",
+    "makebox",
+    "raisebox",
+    "setlength",
+    "addtolength",
+    "rule",
+    "titlerule",
+    "quad",
+    "qquad",
+    "textbar",
+    "vert",
+    "cdot",
+    "bullet",
+    "faGithub",
+    "faLinkedin",
+    "faPhone",
+    "faEnvelope",
+    "faGlobe",
+    "faExternalLink",
+    "faLink",
+    "input",
+    "label",
 }
 DATE_RX = re.compile(
     r"\b(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s*)?(?:19|20)\d{2}\b|\bPresent\b|"
     r"\bCurrent\b|\bOngoing\b|\bExpected\b|\bNow\b",
     re.I,
 )
-GRADE_RX = re.compile(r"\s*(?:[—–|,-]\s*)?((?:C?GPA|CPI|SGPA|Percentage|Score|Grade|Marks)\s*[:\-]?\s*[\d.]+\s*(?:/\s*[\d.]+)?"
-                      r"%?|[\d.]+\s*/\s*(?:10|4|100|1000|600)(?:\.0)?|\d{2,3}(?:\.\d+)?\s*%)\s*$", re.I)
+GRADE_RX = re.compile(
+    r"\s*(?:[—–|,-]\s*)?((?:C?GPA|CPI|SGPA|Percentage|Score|Grade|Marks)\s*[:\-]?\s*[\d.]+\s*(?:/\s*[\d.]+)?"
+    r"%?|[\d.]+\s*/\s*(?:10|4|100|1000|600)(?:\.0)?|\d{2,3}(?:\.\d+)?\s*%)\s*$",
+    re.I,
+)
 
 
 def classify_section(title: str) -> str:
@@ -74,14 +131,12 @@ def parse_latex_template(src: str) -> dict:
     begin = _find_unmasked(src, r"\begin{document}", mask)
     end_doc = _find_unmasked(src, r"\end{document}", mask)
     if begin < 0 or end_doc < 0:
-        raise TemplateParseError("This file is not a complete LaTeX document (no \\begin{document} ... "
-                                 "\\end{document}).")
+        raise TemplateParseError(
+            "This file is not a complete LaTeX document (no \\begin{document} ... \\end{document})."
+        )
     body_start = begin + len(r"\begin{document}")
 
-    section_calls = [
-        c for c in iter_macros(src, body_start, end_doc, mask)
-        if _is_section_macro(c.name) and c.args
-    ]
+    section_calls = [c for c in iter_macros(src, body_start, end_doc, mask) if _is_section_macro(c.name) and c.args]
     if not section_calls:
         raise TemplateParseError("No sections were found. CareerPilot looks for \\section{...} style headings.")
 
@@ -142,8 +197,13 @@ def _parse_header(src: str, span: list[int]) -> dict:
             email = email or url[7:]
             continue
         low = url.lower()
-        kind = "linkedin" if "linkedin." in low else "github" if "github." in low else (
-            "phone" if low.startswith("tel:") else "website")
+        kind = (
+            "linkedin"
+            if "linkedin." in low
+            else "github"
+            if "github." in low
+            else ("phone" if low.startswith("tel:") else "website")
+        )
         links.append({"url": url, "text": text, "kind": kind})
     if not email:
         m = EMAIL_RX.search(plain)
@@ -210,8 +270,9 @@ def _find_items(src, mask, calls: list[MacroCall], start, end) -> list[dict]:
     """Bullet items: one-argument \\...item... macros, or plain \\item lines."""
     items: list[dict] = []
     item_macro_names = Counter(
-        c.name for c in calls if "item" in c.name.lower() and c.name != "item" and len(c.args) == 1
-        and "list" not in c.name.lower()
+        c.name
+        for c in calls
+        if "item" in c.name.lower() and c.name != "item" and len(c.args) == 1 and "list" not in c.name.lower()
     )
     for c in calls:
         if c.name in item_macro_names and len(c.args) == 1:
@@ -327,13 +388,15 @@ def _innermost_text(src, mask, a: int, b: int) -> tuple[int, int]:
     """For a cell like "\\hfill {\\small Vijayawada}" or "\\underline{\\small Intern}", the span of the words."""
     a, b = _trim(src, mask, a, b)
     for _ in range(4):
-        m = re.match(r"(?:\\(?:hfill|small|footnotesize|normalsize|large|itshape|bfseries|scshape|centering|quad)\s*)+",
-                     src[a:b])
+        m = re.match(
+            r"(?:\\(?:hfill|small|footnotesize|normalsize|large|itshape|bfseries|scshape|centering|quad)\s*)+", src[a:b]
+        )
         if m:
             a += m.end()
             a, b = _trim(src, mask, a, b)
-        m = re.match(r"\\(?:textbf|textit|emph|underline|textsc|small|footnotesize|mbox)\s*\{", src[a:b]) or \
-            re.match(r"\{", src[a:b])
+        m = re.match(r"\\(?:textbf|textit|emph|underline|textsc|small|footnotesize|mbox)\s*\{", src[a:b]) or re.match(
+            r"\{", src[a:b]
+        )
         if m:
             ob = a + m.end() - 1
             cb = match_brace(src, ob, mask)
@@ -364,7 +427,7 @@ def _tabular_entries(src, mask, calls, start, end, kind, items) -> list[dict]:
         fields, slots = {}, {}
         first = head_cells[0]
         pa, pb = _innermost_text(src, mask, *first[0])
-        bold = re.search(r"\\textbf\s*\{", src[first[0][0]:first[0][1]])
+        bold = re.search(r"\\textbf\s*\{", src[first[0][0] : first[0][1]])
         fields["primary"] = to_plain(src[pa:pb])
         slots["primary"] = [pa, pb]
         if len(first) > 1:
@@ -392,16 +455,21 @@ def _tabular_entries(src, mask, calls, start, end, kind, items) -> list[dict]:
         fields["short_name"] = re.split(r"\s+[—–-]{1,2}\s+|\s*\|\s*", fields["primary"], maxsplit=1)[0].strip()
         if not bold and not own_items:
             continue
-        entries.append({
-            "span": [begin.start, env_end],
-            "heading": {"macro": "tabular", "span": [begin.start, own_items[0]["start"] if own_items else env_end],
-                        "args": []},
-            "items": [_item_dict(src, it) for it in own_items],
-            "items_region": [own_items[0]["start"], own_items[-1]["end"]] if own_items else None,
-            "item_separator": _item_separator(src, own_items) if own_items else "",
-            "fields": fields,
-            "slots": slots,
-        })
+        entries.append(
+            {
+                "span": [begin.start, env_end],
+                "heading": {
+                    "macro": "tabular",
+                    "span": [begin.start, own_items[0]["start"] if own_items else env_end],
+                    "args": [],
+                },
+                "items": [_item_dict(src, it) for it in own_items],
+                "items_region": [own_items[0]["start"], own_items[-1]["end"]] if own_items else None,
+                "item_separator": _item_separator(src, own_items) if own_items else "",
+                "fields": fields,
+                "slots": slots,
+            }
+        )
     return entries
 
 
@@ -422,13 +490,18 @@ def _tabular_skills(src, mask, calls, start, end) -> list[dict]:
             cells = _split_top(src, mask, r0, r1, "&")
             if len(cells) < 2:
                 continue
-            name = to_plain(src[cells[0][0]:cells[0][1]]).strip().rstrip(":")
+            name = to_plain(src[cells[0][0] : cells[0][1]]).strip().rstrip(":")
             va, vb = _trim(src, mask, *cells[-1])
             value = to_plain(src[va:vb])
             if not name or not value or len(name) > 60:
                 continue
-            cats.append({"name": name, "span": [va, vb],
-                         "items": [x.strip() for x in _split_top_level_commas(value) if x.strip()]})
+            cats.append(
+                {
+                    "name": name,
+                    "span": [va, vb],
+                    "items": [x.strip() for x in _split_top_level_commas(value) if x.strip()],
+                }
+            )
     return cats
 
 
@@ -442,8 +515,12 @@ def _item_separator(src, items) -> str:
 def _find_headings(calls: list[MacroCall], items: list[dict], kind: str) -> list[MacroCall]:
     item_starts = {it["start"] for it in items}
     candidates = [
-        c for c in calls
-        if c.args and c.name not in FORMATTING and c.start not in item_starts and not _is_section_macro(c.name)
+        c
+        for c in calls
+        if c.args
+        and c.name not in FORMATTING
+        and c.start not in item_starts
+        and not _is_section_macro(c.name)
         and not any(it["start"] < c.start < it["end"] for it in items)
     ]
     if not candidates:
@@ -515,8 +592,11 @@ def _build_entries(src, mask, calls, headings, items, section_end, kind) -> list
                     end = closer
         entry = {
             "span": [h.start, end],
-            "heading": {"macro": h.name, "span": [h.start, h.end],
-                        "args": [{"inner": [a.start + 1, a.end], "text": to_plain(a.inner(src))} for a in h.args]},
+            "heading": {
+                "macro": h.name,
+                "span": [h.start, h.end],
+                "args": [{"inner": [a.start + 1, a.end], "text": to_plain(a.inner(src))} for a in h.args],
+            },
             "items": [_item_dict(src, it) for it in own_items],
             "items_region": items_region,
             "item_separator": _item_separator(src, own_items) if own_items else "",
@@ -560,16 +640,21 @@ def _block_entries(src, mask, blocks, items, start, kind) -> list[dict]:
                 a = c.args[0]
                 args.append(Arg(a.start, a.end))
         fields, slots = _heading_fields(src, mask, args, kind, raw_heading=(h_start, b_start))
-        entries.append({
-            "span": [h_start, b_end],
-            "heading": {"macro": "", "span": [h_start, b_start],
-                        "args": [{"inner": [a.start + 1, a.end], "text": to_plain(a.inner(src))} for a in args]},
-            "items": [_item_dict(src, it) for it in own_items],
-            "items_region": [own_items[0]["start"], own_items[-1]["end"]] if own_items else None,
-            "item_separator": _item_separator(src, own_items) if own_items else "",
-            "fields": fields,
-            "slots": slots,
-        })
+        entries.append(
+            {
+                "span": [h_start, b_end],
+                "heading": {
+                    "macro": "",
+                    "span": [h_start, b_start],
+                    "args": [{"inner": [a.start + 1, a.end], "text": to_plain(a.inner(src))} for a in args],
+                },
+                "items": [_item_dict(src, it) for it in own_items],
+                "items_region": [own_items[0]["start"], own_items[-1]["end"]] if own_items else None,
+                "item_separator": _item_separator(src, own_items) if own_items else "",
+                "fields": fields,
+                "slots": slots,
+            }
+        )
         prev_end = b_end
     return entries
 
@@ -618,8 +703,9 @@ def _heading_fields(src, mask, args: list[Arg], kind: str, raw_heading=None) -> 
                 slots["primary"] = [bold.start + 1, bold.end]
             else:
                 fields["primary"] = text.split("|")[0].strip()
-                slots["primary"] = [a.start + 1, a.end] if "|" not in text else slots.get("primary", [a.start + 1,
-                                                                                                          a.end])
+                slots["primary"] = (
+                    [a.start + 1, a.end] if "|" not in text else slots.get("primary", [a.start + 1, a.end])
+                )
             primary_done = True
             continue
         if "tech" in slots and a.start < slots["tech"][0] < a.end:
@@ -738,8 +824,10 @@ def _paragraph_span(src, mask, start, end) -> list[int] | None:
     if i >= j:
         return None
     # leave trailing/leading layout commands (\vspace{-5pt}, \medskip ...) outside the editable text
-    layout_cmd = re.compile(r"\\(?:vspace\*?\{[^{}]*\}|hspace\*?\{[^{}]*\}|medskip|smallskip|bigskip|par|noindent|"
-                            r"newline)\s*$")
+    layout_cmd = re.compile(
+        r"\\(?:vspace\*?\{[^{}]*\}|hspace\*?\{[^{}]*\}|medskip|smallskip|bigskip|par|noindent|"
+        r"newline)\s*$"
+    )
     while True:
         m = layout_cmd.search(src[i:j])
         if not m:
@@ -775,8 +863,15 @@ def summarize_structure(structure: dict) -> list[dict]:
     for s in structure.get("sections", []):
         layout = s.get("layout")
         count = len(s.get("entries", []) or s.get("items", []) or s.get("skills", []))
-        out.append({"index": s["index"], "title": s["title"], "kind": s["kind"], "layout": layout,
-                    "count": count if layout != "paragraph" else 1})
+        out.append(
+            {
+                "index": s["index"],
+                "title": s["title"],
+                "kind": s["kind"],
+                "layout": layout,
+                "count": count if layout != "paragraph" else 1,
+            }
+        )
     return out
 
 

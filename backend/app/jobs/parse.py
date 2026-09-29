@@ -14,30 +14,85 @@ from dateutil import parser as dateparser
 from app.matching.taxonomy import category_of, display_name, find_skills
 
 SECTION_RULES: list[tuple[str, re.Pattern]] = [
-    ("preferred", re.compile(r"prefer|nice[\s-]to[\s-]have|bonus|plus|desired|good[\s-]to[\s-]have|additional (skills|"
-                             r"qualifications)|added advantage|pluses|would be great|extra credit", re.I)),
-    ("required", re.compile(r"requirement|qualification|must[\s-]have|what you('ll)? (need|bring)|minimum|basic|"
-                            r"required|who you are|skills|what we('re| are) looking for|you (have|bring|should have)|"
-                            r"eligibility|competenc|experience|about you|your profile|technical", re.I)),
-    ("responsibilities", re.compile(r"responsibilit|what you('ll| will) do|the role|role overview|duties|day[\s-]to[\s-]"
-                                    r"day|you will|your impact|in this role|key tasks|job description|what you'll be "
-                                    r"doing|about the (role|job|position)", re.I)),
-    ("company", re.compile(r"about (us|the company|the team|[A-Z][\w&.\- ]{1,40})$|who we are|our (mission|story|team)|"
-                           r"company overview|life at", re.I)),
-    ("benefits", re.compile(r"benefit|perks|what we offer|compensation|salary|why join|equal opportunity|eeo|"
-                            r"diversity", re.I)),
+    (
+        "preferred",
+        re.compile(
+            r"prefer|nice[\s-]to[\s-]have|bonus|plus|desired|good[\s-]to[\s-]have|additional (skills|"
+            r"qualifications)|added advantage|pluses|would be great|extra credit",
+            re.I,
+        ),
+    ),
+    (
+        "required",
+        re.compile(
+            r"requirement|qualification|must[\s-]have|what you('ll)? (need|bring)|minimum|basic|"
+            r"required|who you are|skills|what we('re| are) looking for|you (have|bring|should have)|"
+            r"eligibility|competenc|experience|about you|your profile|technical",
+            re.I,
+        ),
+    ),
+    (
+        "responsibilities",
+        re.compile(
+            r"responsibilit|what you('ll| will) do|the role|role overview|duties|day[\s-]to[\s-]"
+            r"day|you will|your impact|in this role|key tasks|job description|what you'll be "
+            r"doing|about the (role|job|position)",
+            re.I,
+        ),
+    ),
+    (
+        "company",
+        re.compile(
+            r"about (us|the company|the team|[A-Z][\w&.\- ]{1,40})$|who we are|our (mission|story|team)|"
+            r"company overview|life at",
+            re.I,
+        ),
+    ),
+    (
+        "benefits",
+        re.compile(
+            r"benefit|perks|what we offer|compensation|salary|why join|equal opportunity|eeo|"
+            r"diversity",
+            re.I,
+        ),
+    ),
 ]
-PREFERRED_CUES = re.compile(r"\b(preferred|nice[\s-]to[\s-]have|a plus|is a plus|bonus|good[\s-]to[\s-]have|desirable|"
-                            r"advantageous|added advantage|optional|familiarity with|exposure to)\b", re.I)
-REQUIRED_CUES = re.compile(r"\b(must|required|requirement|proficien\w*|strong|solid|hands[\s-]on|experience (in|with)|"
-                           r"knowledge of|expertise|skilled|understanding of|ability to|working knowledge)\b", re.I)
+PREFERRED_CUES = re.compile(
+    r"\b(preferred|nice[\s-]to[\s-]have|a plus|is a plus|bonus|good[\s-]to[\s-]have|desirable|"
+    r"advantageous|added advantage|optional|familiarity with|exposure to)\b",
+    re.I,
+)
+REQUIRED_CUES = re.compile(
+    r"\b(must|required|requirement|proficien\w*|strong|solid|hands[\s-]on|experience (in|with)|"
+    r"knowledge of|expertise|skilled|understanding of|ability to|working knowledge)\b",
+    re.I,
+)
 DOMAIN_TERMS = {
-    "fintech": "Fintech", "banking": "Banking", "payments": "Payments", "healthcare": "Healthcare",
-    "e-commerce": "E-commerce", "ecommerce": "E-commerce", "insurance": "Insurance", "telecom": "Telecom",
-    "supply chain": "Supply chain", "logistics": "Logistics", "saas": "SaaS", "edtech": "EdTech", "retail": "Retail",
-    "automotive": "Automotive", "adtech": "AdTech", "gaming": "Gaming", "cybersecurity": "Cybersecurity",
-    "erp": "ERP", "crm": "CRM", "capital markets": "Capital markets", "trading": "Trading", "iot": "IoT",
-    "embedded": "Embedded systems", "semiconductor": "Semiconductors", "pharma": "Pharma",
+    "fintech": "Fintech",
+    "banking": "Banking",
+    "payments": "Payments",
+    "healthcare": "Healthcare",
+    "e-commerce": "E-commerce",
+    "ecommerce": "E-commerce",
+    "insurance": "Insurance",
+    "telecom": "Telecom",
+    "supply chain": "Supply chain",
+    "logistics": "Logistics",
+    "saas": "SaaS",
+    "edtech": "EdTech",
+    "retail": "Retail",
+    "automotive": "Automotive",
+    "adtech": "AdTech",
+    "gaming": "Gaming",
+    "cybersecurity": "Cybersecurity",
+    "erp": "ERP",
+    "crm": "CRM",
+    "capital markets": "Capital markets",
+    "trading": "Trading",
+    "iot": "IoT",
+    "embedded": "Embedded systems",
+    "semiconductor": "Semiconductors",
+    "pharma": "Pharma",
 }
 DEGREE_RX = re.compile(
     r"\b(bachelor'?s?|master'?s?|b\.?\s?tech|m\.?\s?tech|b\.?\s?e\b|m\.?\s?e\b|b\.?\s?sc|m\.?\s?sc|bca|mca|mba|ph\.?\s?d|"
@@ -49,8 +104,11 @@ YEARS_RX = re.compile(
     r"\bexperience|experience[^.\n]{0,40}?(\d{1,2})\s*(?:\+|plus)?\s*(?:years?|yrs?)",
     re.I,
 )
-FRESHER_RX = re.compile(r"\b(freshers?|entry[\s-]level|new grad(uate)?s?|recent graduates?|0\s*(-|–|to)\s*[12]\s*years?|"
-                        r"no (prior )?experience (is )?required|campus hire|graduate (program|trainee))\b", re.I)
+FRESHER_RX = re.compile(
+    r"\b(freshers?|entry[\s-]level|new grad(uate)?s?|recent graduates?|0\s*(-|–|to)\s*[12]\s*years?|"
+    r"no (prior )?experience (is )?required|campus hire|graduate (program|trainee))\b",
+    re.I,
+)
 JOB_ID_RX = re.compile(
     r"\b(?:job|req(?:uisition)?|position|posting|reference|ref|vacancy|opening)\s*(?:id|no\.?|number|#|code)\s*[:#.\-]?\s*"
     r"([A-Z0-9][A-Z0-9_\-/]{2,30})\b",
@@ -248,9 +306,12 @@ def _education(blocks: list[Block], out: JDAnalysis) -> None:
             continue
         for line in b.lines:
             body = line[2:] if line.startswith("- ") else line
-            if DEGREE_RX.search(body) and re.search(r"degree|bachelor|master|b\.?\s?tech|b\.?e\b|graduat|m\.?\s?tech|"
-                                                    r"computer science|engineering|b\.?s\b|m\.?s\b|mca|bca|ph\.?d",
-                                                    body, re.I):
+            if DEGREE_RX.search(body) and re.search(
+                r"degree|bachelor|master|b\.?\s?tech|b\.?e\b|graduat|m\.?\s?tech|"
+                r"computer science|engineering|b\.?s\b|m\.?s\b|mca|bca|ph\.?d",
+                body,
+                re.I,
+            ):
                 if len(body) > 400:
                     continue
                 out.education_text = body
@@ -275,14 +336,17 @@ def _domains(text: str, out: JDAnalysis) -> None:
         if re.search(rf"\b{re.escape(term)}\b", low) and label not in seen:
             seen.add(label)
             m = re.search(rf"\b{re.escape(term)}\b", low)
-            out.requirements.append(Requirement("domain", label, "", "domain", "keyword",
-                                                _sentence(text, m.start(), m.end())))
+            out.requirements.append(
+                Requirement("domain", label, "", "domain", "keyword", _sentence(text, m.start(), m.end()))
+            )
 
 
 def parse_explicit_date(fragment: str) -> date | None:
     """Parses a date only if it names a day, a month and a year. Returns None for anything vaguer."""
     frag = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", fragment)
-    frag = re.split(r"\b(at|by|before|\d{1,2}:\d{2}|\d{1,2}\s*(am|pm)|IST|UTC|GMT|EST|PST|midnight)\b", frag, flags=re.I)[0]
+    frag = re.split(
+        r"\b(at|by|before|\d{1,2}:\d{2}|\d{1,2}\s*(am|pm)|IST|UTC|GMT|EST|PST|midnight)\b", frag, flags=re.I
+    )[0]
     if not re.search(r"\b(19|20)\d{2}\b", frag):
         return None
     has_month_word = re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b", frag, re.I)
@@ -304,8 +368,9 @@ def _deadline(text: str, out: JDAnalysis) -> None:
             out.deadline_source = f'Stated in the posting: "{phrase[:120]}"'
             return
         if re.search(r"\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec", m.group(2), re.I):
-            out.notes.append(f'The posting mentions a deadline ("{phrase[:100]}") without a full date, so none was '
-                             "recorded.")
+            out.notes.append(
+                f'The posting mentions a deadline ("{phrase[:100]}") without a full date, so none was recorded.'
+            )
             return
 
 

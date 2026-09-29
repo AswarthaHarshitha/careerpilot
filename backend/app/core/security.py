@@ -15,7 +15,7 @@ _hasher = PasswordHasher()
 SESSION_COOKIE = "cp_session"
 CSRF_COOKIE = "cp_csrf"
 CSRF_HEADER = "X-CSRF-Token"
-RUNNER_TOKEN_PREFIX = "cpr_"
+RUNNER_TOKEN_PREFIX = "cpr_"  # noqa: S105 - a public token prefix, not a secret
 
 
 def hash_password(password: str) -> str:

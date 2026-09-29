@@ -45,22 +45,38 @@ class PasswordIn(BaseModel):
 
 
 def _user_out(u: User, session: AuthSession) -> dict:
-    return {"id": u.id, "email": u.email, "display_name": u.display_name, "csrf_token": session.csrf_token,
-            "created_at": u.created_at.isoformat()}
+    return {
+        "id": u.id,
+        "email": u.email,
+        "display_name": u.display_name,
+        "csrf_token": session.csrf_token,
+        "created_at": u.created_at.isoformat(),
+    }
 
 
 def _start_session(db: Session, response: Response, request: Request, user: User) -> AuthSession:
     sid = new_session_id()
     expires = session_expiry()
-    session = AuthSession(id=sid, user_id=user.id, expires_at=expires, csrf_token=secrets.token_urlsafe(24),
-                          user_agent=(request.headers.get("user-agent") or "")[:300])
+    session = AuthSession(
+        id=sid,
+        user_id=user.id,
+        expires_at=expires,
+        csrf_token=secrets.token_urlsafe(24),
+        user_agent=(request.headers.get("user-agent") or "")[:300],
+    )
     db.add(session)
     user.last_login_at = datetime.now(UTC)
     db.commit()
     settings = get_settings()
-    response.set_cookie(SESSION_COOKIE, encode_session(sid, user.id, expires), httponly=True,
-                        secure=settings.cookie_secure, samesite="lax", path="/",
-                        max_age=settings.session_ttl_hours * 3600)
+    response.set_cookie(
+        SESSION_COOKIE,
+        encode_session(sid, user.id, expires),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/",
+        max_age=settings.session_ttl_hours * 3600,
+    )
     return session
 
 
@@ -75,8 +91,11 @@ def register(body: RegisterIn, request: Request, response: Response, db: Session
     limit(request, "register", 5, 3600)
     users = db.scalar(select(func.count(User.id))) or 0
     if users > 0 and not get_settings().allow_registration:
-        raise AppError("Registration is closed. This CareerPilot instance already has its owner.",
-                       code="registration_closed", status_code=403)
+        raise AppError(
+            "Registration is closed. This CareerPilot instance already has its owner.",
+            code="registration_closed",
+            status_code=403,
+        )
     problem = validate_password_strength(body.password)
     if problem:
         raise AppError(problem, code="weak_password")
@@ -131,8 +150,12 @@ def me(user: User = Depends(current_user), session: AuthSession = Depends(curren
 
 
 @router.post("/password")
-def change_password(body: PasswordIn, user: User = Depends(current_user),
-                    session: AuthSession = Depends(current_session), db: Session = Depends(get_db)):
+def change_password(
+    body: PasswordIn,
+    user: User = Depends(current_user),
+    session: AuthSession = Depends(current_session),
+    db: Session = Depends(get_db),
+):
     if not verify_password(user.password_hash, body.current_password):
         raise AppError("Your current password is incorrect.", code="wrong_password", status_code=400)
     problem = validate_password_strength(body.new_password)
@@ -140,27 +163,44 @@ def change_password(body: PasswordIn, user: User = Depends(current_user),
         raise AppError(problem, code="weak_password")
     user.password_hash = hash_password(body.new_password)
     now = datetime.now(UTC)
-    for s in db.scalars(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.id != session.id,
-                                                  AuthSession.revoked_at.is_(None))):
+    for s in db.scalars(
+        select(AuthSession).where(
+            AuthSession.user_id == user.id, AuthSession.id != session.id, AuthSession.revoked_at.is_(None)
+        )
+    ):
         s.revoked_at = now
     db.commit()
     return {"ok": True}
 
 
 @router.get("/sessions")
-def list_sessions(user: User = Depends(current_user), session: AuthSession = Depends(current_session),
-                  db: Session = Depends(get_db)):
+def list_sessions(
+    user: User = Depends(current_user), session: AuthSession = Depends(current_session), db: Session = Depends(get_db)
+):
     now = datetime.now(UTC)
-    rows = db.scalars(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None),
-                                                AuthSession.expires_at > now).order_by(AuthSession.created_at.desc()))
-    return [{"id": s.id[:8], "created_at": s.created_at.isoformat(), "user_agent": s.user_agent,
-             "current": s.id == session.id} for s in rows]
+    rows = db.scalars(
+        select(AuthSession)
+        .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None), AuthSession.expires_at > now)
+        .order_by(AuthSession.created_at.desc())
+    )
+    return [
+        {
+            "id": s.id[:8],
+            "created_at": s.created_at.isoformat(),
+            "user_agent": s.user_agent,
+            "current": s.id == session.id,
+        }
+        for s in rows
+    ]
 
 
 @router.delete("/sessions/{prefix}")
 def revoke_session(prefix: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    s = db.scalar(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.id.startswith(prefix[:8]),
-                                            AuthSession.revoked_at.is_(None)))
+    s = db.scalar(
+        select(AuthSession).where(
+            AuthSession.user_id == user.id, AuthSession.id.startswith(prefix[:8]), AuthSession.revoked_at.is_(None)
+        )
+    )
     if s is None or len(prefix) < 8:
         raise NotFound("Session")
     s.revoked_at = datetime.now(UTC)

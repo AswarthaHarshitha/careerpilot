@@ -30,8 +30,13 @@ from app.models import (
 from app.services.snapshot import load_snapshot
 from app.tasks.queue import TaskContext, enqueue, task_handler
 
-ANALYSIS_STEPS_URL = ["Reading the job page", "Extracting requirements", "Checking your profile", "Analyzing projects",
-                      "Preparing recommendations"]
+ANALYSIS_STEPS_URL = [
+    "Reading the job page",
+    "Extracting requirements",
+    "Checking your profile",
+    "Analyzing projects",
+    "Preparing recommendations",
+]
 ANALYSIS_STEPS_TEXT = ANALYSIS_STEPS_URL[1:]
 
 
@@ -51,10 +56,17 @@ def create_job_from_url(db: Session, user_id: int, url: str, careers_url: str = 
         careers_url = validate_url(careers_url)
     existing = db.scalar(select(Job).where(Job.user_id == user_id, Job.job_url == url, Job.archived.is_(False)))
     if existing:
-        raise AppError("You already imported this job.", code="duplicate_job", status_code=409,
-                       actions=[f"open_job:{existing.id}"])
-    job = Job(user_id=user_id, job_url=url, company_careers_url=careers_url, ingest_method="url",
-              source_platform=detect_platform(url), analysis_state="pending")
+        raise AppError(
+            "You already imported this job.", code="duplicate_job", status_code=409, actions=[f"open_job:{existing.id}"]
+        )
+    job = Job(
+        user_id=user_id,
+        job_url=url,
+        company_careers_url=careers_url,
+        ingest_method="url",
+        source_platform=detect_platform(url),
+        analysis_state="pending",
+    )
     db.add(job)
     db.flush()
     _ensure_application(db, job, "analyzing")
@@ -63,21 +75,38 @@ def create_job_from_url(db: Session, user_id: int, url: str, careers_url: str = 
     return job, task.id
 
 
-def create_job_from_text(db: Session, user_id: int, text: str, *, company: str = "", role: str = "",
-                         job_url: str = "", application_url: str = "", method: str = "paste") -> tuple[Job, int]:
+def create_job_from_text(
+    db: Session,
+    user_id: int,
+    text: str,
+    *,
+    company: str = "",
+    role: str = "",
+    job_url: str = "",
+    application_url: str = "",
+    method: str = "paste",
+) -> tuple[Job, int]:
     text = (text or "").strip()
     if len(text) < 120:
-        raise AppError("The job description is too short to analyse. Paste the full posting.",
-                       code="description_too_short")
+        raise AppError(
+            "The job description is too short to analyse. Paste the full posting.", code="description_too_short"
+        )
     if len(text) > 100_000:
         raise AppError("The job description is too long (over 100,000 characters).", code="description_too_long")
     for u in (job_url, application_url):
         if u:
             validate_url(u)
-    job = Job(user_id=user_id, company=company.strip()[:200], role_title=role.strip()[:300], job_url=job_url,
-              application_url=application_url, description_text=text, ingest_method=method,
-              source_platform=detect_platform(application_url or job_url) if (application_url or job_url) else "pasted",
-              analysis_state="pending")
+    job = Job(
+        user_id=user_id,
+        company=company.strip()[:200],
+        role_title=role.strip()[:300],
+        job_url=job_url,
+        application_url=application_url,
+        description_text=text,
+        ingest_method=method,
+        source_platform=detect_platform(application_url or job_url) if (application_url or job_url) else "pasted",
+        analysis_state="pending",
+    )
     db.add(job)
     db.flush()
     _ensure_application(db, job, "analyzing")
@@ -176,9 +205,18 @@ def _analyze(ctx: TaskContext, job: Job) -> dict:
         db.execute(delete(JobRequirement).where(JobRequirement.job_id == job.id))
         db.flush()
         for pos, r in enumerate(analysis.requirements):
-            db.add(JobRequirement(job_id=job.id, kind=r.kind, label=r.label[:300], canonical=r.canonical,
-                                  category=r.category, importance=r.importance, source_snippet=r.snippet[:1000],
-                                  position=pos))
+            db.add(
+                JobRequirement(
+                    job_id=job.id,
+                    kind=r.kind,
+                    label=r.label[:300],
+                    canonical=r.canonical,
+                    category=r.category,
+                    importance=r.importance,
+                    source_snippet=r.snippet[:1000],
+                    position=pos,
+                )
+            )
         db.commit()
         if not analysis.requirements:
             notes.append("No specific skills were recognised in this posting.")
@@ -194,8 +232,9 @@ def _analyze(ctx: TaskContext, job: Job) -> dict:
         app_row = db.scalar(select(Application).where(Application.job_id == job.id))
         if app_row and app_row.status == "analyzing":
             app_row.status = "saved"
-            db.add(ApplicationEvent(application_id=app_row.id, kind="status", message="Job analysed",
-                                    data={"to": "saved"}))
+            db.add(
+                ApplicationEvent(application_id=app_row.id, kind="status", message="Job analysed", data={"to": "saved"})
+            )
         db.commit()
     return {"job_id": job.id, "requirements": len(job.requirements)}
 
@@ -220,11 +259,24 @@ def auto_supporting_project(db: Session, job: Job, settings: UserSettings | None
     gaps = coherent_gaps(list(dict.fromkeys(missing)))
     anchors = [r.canonical for r in skills if matches.get(r.id) == "strong"][:3]
     provider = get_provider(settings)
-    plan = llm_plan(provider, gaps, anchors, job.role_title, job.company, job.description_text[:4000]) if provider \
+    plan = (
+        llm_plan(provider, gaps, anchors, job.role_title, job.company, job.description_text[:4000])
+        if provider
         else None
+    )
     plan = plan or deterministic_plan(gaps, anchors, job.role_title, job.company)
-    db.add(SuggestedProject(user_id=job.user_id, job_id=job.id, title=plan["title"][:200], gap_skills=gaps,
-                            existing_skills=anchors, status="idea", plan=plan, auto_generated=True))
+    db.add(
+        SuggestedProject(
+            user_id=job.user_id,
+            job_id=job.id,
+            title=plan["title"][:200],
+            gap_skills=gaps,
+            existing_skills=anchors,
+            status="idea",
+            plan=plan,
+            auto_generated=True,
+        )
+    )
     db.commit()
 
 
@@ -236,21 +288,33 @@ def _guess_company(text: str) -> str:
 def _guess_role(text: str) -> str:
     for line in text.splitlines()[:8]:
         line = line.strip("#- ").strip()
-        if 3 < len(line) < 90 and re.search(r"engineer|developer|analyst|scientist|intern|manager|architect|"
-                                            r"specialist|programmer|consultant|designer|associate", line, re.I):
+        if 3 < len(line) < 90 and re.search(
+            r"engineer|developer|analyst|scientist|intern|manager|architect|"
+            r"specialist|programmer|consultant|designer|associate",
+            line,
+            re.I,
+        ):
             return line
     return ""
 
 
 def rematch(db: Session, job: Job, only_requirements: bool = False) -> None:
     snap = load_snapshot(db, job.user_id)
-    reqs = [RequirementInput(r.id, r.kind, r.label, r.canonical, r.importance, r.source_snippet)
-            for r in job.requirements]
+    reqs = [
+        RequirementInput(r.id, r.kind, r.label, r.canonical, r.importance, r.source_snippet) for r in job.requirements
+    ]
     db.execute(delete(JobMatch).where(JobMatch.job_id == job.id))
     db.flush()
     for res in match_requirements(reqs, snap):
-        db.add(JobMatch(job_id=job.id, requirement_id=res.requirement_id, status=res.status, rationale=res.rationale,
-                        evidence_refs=[e.as_dict() for e in res.evidence]))
+        db.add(
+            JobMatch(
+                job_id=job.id,
+                requirement_id=res.requirement_id,
+                status=res.status,
+                rationale=res.rationale,
+                evidence_refs=[e.as_dict() for e in res.evidence],
+            )
+        )
     db.commit()
     if not only_requirements:
         recommend_projects(db, job, snap)
@@ -267,21 +331,33 @@ def recommend_projects(db: Session, job: Job, snap=None) -> None:
     db.flush()
     for rank, s in enumerate(score_projects(reqs, snap)[:12], 1):
         selected = (s.project_id in previously_selected) if had_manual else rank <= max_projects
-        db.add(JobProjectRecommendation(job_id=job.id, project_id=s.project_id, score=s.score, rank=rank,
-                                        matched=s.matched, selected=selected))
+        db.add(
+            JobProjectRecommendation(
+                job_id=job.id, project_id=s.project_id, score=s.score, rank=rank, matched=s.matched, selected=selected
+            )
+        )
     db.commit()
     db.refresh(job)
 
 
 def _deadline_reminder(db: Session, job: Job, settings: UserSettings | None) -> None:
-    db.execute(delete(Reminder).where(Reminder.job_id == job.id, Reminder.kind == "deadline", Reminder.done_at.is_(None)))
+    db.execute(
+        delete(Reminder).where(Reminder.job_id == job.id, Reminder.kind == "deadline", Reminder.done_at.is_(None))
+    )
     if not job.deadline:
         return
     days = settings.deadline_reminder_days if settings else 3
     due = max(date.today(), job.deadline - timedelta(days=days))
-    db.add(Reminder(user_id=job.user_id, job_id=job.id, kind="deadline", due_date=due,
-                    message=f"Application deadline for {job.role_title or 'this role'} at {job.company or 'the company'} "
-                            f"is {job.deadline.strftime('%d %b %Y')}."))
+    db.add(
+        Reminder(
+            user_id=job.user_id,
+            job_id=job.id,
+            kind="deadline",
+            due_date=due,
+            message=f"Application deadline for {job.role_title or 'this role'} at {job.company or 'the company'} "
+            f"is {job.deadline.strftime('%d %b %Y')}.",
+        )
+    )
 
 
 def days_remaining(deadline: date | None, today: date | None = None) -> int | None:

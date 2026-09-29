@@ -29,8 +29,10 @@ def from_zip(data: bytes) -> tuple[str, dict[str, str]]:
             texts[name] = z.read(i).decode("utf-8", errors="replace")
     mains = [n for n, t in texts.items() if n.endswith(".tex") and "\\documentclass" in t and "\\begin{document}" in t]
     if not mains:
-        raise AppError("No main .tex file (with \\documentclass and \\begin{document}) was found in the archive.",
-                       code="invalid_template")
+        raise AppError(
+            "No main .tex file (with \\documentclass and \\begin{document}) was found in the archive.",
+            code="invalid_template",
+        )
     main = sorted(mains, key=lambda n: (posixpath.basename(n) != "main.tex", n.count("/"), n))[0]
     base = posixpath.dirname(main)
 
