@@ -137,13 +137,20 @@ def test_users_cannot_access_each_others_data(auth_client, second_client):
 
 def test_runner_tokens_are_scoped_and_revocable(auth_client, client):
     tok = auth_client.post("/api/settings/runner-tokens", json={"name": "laptop"}).json()
-    headers = {"Authorization": f"Bearer {tok['token']}"}
+    long_lived = {"Authorization": f"Bearer {tok['token']}"}
+    access = client.post("/api/runner/connect", json={"host": "laptop"}, headers=long_lived).json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
     assert client.get("/api/runner/ping", headers=headers).status_code == 200
-    assert client.get("/api/runner/ping", headers={"Authorization": "Bearer cpr_wrong"}).status_code == 401
+    assert client.get("/api/runner/ping", headers=long_lived).status_code == 401  # only good for /connect
+    assert client.post("/api/runner/connect", json={}, headers={"Authorization": "Bearer cpr_wrong"}).status_code == 401
+    # a web session cookie is not a runner credential, and a session token is not a runner access token
+    assert auth_client.get("/api/runner/ping").status_code == 401
     listed = auth_client.get("/api/settings/runner-tokens").json()
     assert "token" not in listed[0] and listed[0]["prefix"] == tok["token"][:10]
+    assert auth_client.get("/api/agent/status").json()["runner"]["connected"] is True
     auth_client.delete(f"/api/settings/runner-tokens/{tok['id']}")
-    assert client.get("/api/runner/ping", headers=headers).status_code == 401
+    assert client.get("/api/runner/ping", headers=headers).status_code == 401  # revocation ends the access token too
+    assert client.post("/api/runner/connect", json={}, headers=long_lived).status_code == 401
 
 
 # --- SSRF -----------------------------------------------------------------------------------------

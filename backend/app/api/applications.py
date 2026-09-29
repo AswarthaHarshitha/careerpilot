@@ -17,18 +17,25 @@ from app.services.jobs import days_remaining
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 
-def session_out(s) -> dict | None:
+def session_out(s, runner: dict | None = None) -> dict | None:
     if s is None:
         return None
+    online = bool(runner and runner["connected"])
     return {
         "id": s.id,
         "state": s.state,
+        "phase": svc.display_phase(s, online),
+        "runner_online": online,
+        "fields_total": s.fields_total,
+        "fields_done": s.fields_done,
+        "resume_uploaded": s.resume_uploaded,
+        "submit_clicked_at": s.submit_clicked_at.isoformat() if s.submit_clicked_at else None,
         "message": s.message,
         "current_url": s.current_url,
         "step": s.step,
         "platform": s.platform,
         "has_screenshot": s.screenshot_png is not None,
-        "log": s.log[-20:],
+        "log": s.log[-60:],
         "answers_revision": s.answers_revision,
         "filled_revision": s.filled_revision,
         "submit_confirmed_at": s.submit_confirmed_at.isoformat() if s.submit_confirmed_at else None,
@@ -50,6 +57,8 @@ def field_out(f) -> dict:
         "sensitive": f.sensitive,
         "value": f.value,
         "value_source": f.value_source,
+        "provenance": svc.PROVENANCE.get(f.value_source, ""),
+        "category": svc.question_category(f),
         "status": f.status,
         "note": f.note,
         "fill_result": f.fill_result,
@@ -93,8 +102,11 @@ def app_out(db: Session, a: Application, job: Job | None, full: bool = False) ->
             if x.confirmed
         ]
         out["fields"] = [field_out(f) for f in a.fields]
-        out["session"] = session_out(svc.latest_session(db, a.id))
+        runner = svc.runner_status(db, a.user_id)
+        out["session"] = session_out(svc.latest_session(db, a.id), runner)
+        out["runner"] = runner
         out["confirmation_text"] = a.confirmation_text
+        out["confirmation_id"] = a.confirmation_id
     return out
 
 
@@ -174,6 +186,7 @@ class FieldPatch(BaseModel):
     value: str | None = Field(default=None, max_length=5000)
     confirm: bool = False
     skip: bool = False
+    remember: bool = False  # save for future applications (only when the user ticks "Remember this answer")
 
 
 @router.patch("/{app_id}/fields/{field_id}")
@@ -181,7 +194,7 @@ def update_field(
     app_id: int, field_id: int, body: FieldPatch, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     a = svc.get_application(db, user.id, app_id)
-    svc.update_field(db, a, field_id, body.value, body.confirm, body.skip)
+    svc.update_field(db, a, field_id, body.value, body.confirm, body.skip, body.remember)
     return app_out(db, a, db.get(Job, a.job_id), full=True)
 
 
@@ -195,6 +208,14 @@ def confirm_submit(
 ):
     a = svc.get_application(db, user.id, app_id)
     svc.confirm_submit(db, a, body.typed_confirmation, client_ip(request))
+    return app_out(db, a, db.get(Job, a.job_id), full=True)
+
+
+@router.post("/{app_id}/automation/continue")
+def continue_application(app_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """After a CAPTCHA, sign-in or other hand-off: tells the runner to look at the page again and carry on."""
+    a = svc.get_application(db, user.id, app_id)
+    svc.continue_session(db, a)
     return app_out(db, a, db.get(Job, a.job_id), full=True)
 
 

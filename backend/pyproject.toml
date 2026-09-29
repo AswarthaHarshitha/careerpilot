@@ -65,5 +65,5 @@ ignore = ["S101", "B008", "S311"]
 "tests/**" = ["S105", "S106", "S108", "S603", "S607"]
 "migrations/**" = ["E501"]
 # Embedded page scripts/HTML, and best-effort probes of third-party pages that must not abort a run
-"app/automation/**" = ["E501", "S110", "S112", "SIM105"]
+"app/automation/**" = ["E501", "S110", "S112", "SIM105", "S603", "S607"]
 "tests/support/**" = ["E501"]

@@ -135,7 +135,8 @@ def start_session(db: Session, a: Application, resume_version_id: int | None) ->
         start_url=url,
         platform=job.source_platform if job else "",
         state="queued",
-        message="Waiting for the CareerPilot apply agent on your computer to pick this up.",
+        phase="QUEUED",
+        message="Queued for the CareerPilot Runner.",
     )
     db.add(s)
     a.resume_version_id = rv_id
@@ -163,8 +164,11 @@ def latest_session(db: Session, app_id: int) -> AutomationSession | None:
     )
 
 
+RECLAIM_AFTER = timedelta(seconds=30)  # a session whose runner went silent this long can be picked up again
+
+
 def claim_session(db: Session, user_id: int, token_id: int) -> AutomationSession | None:
-    stale = datetime.now(UTC) - timedelta(minutes=2)
+    stale = datetime.now(UTC) - RECLAIM_AFTER
     s = db.scalar(
         select(AutomationSession)
         .where(AutomationSession.user_id == user_id, AutomationSession.state == "queued")
@@ -186,19 +190,137 @@ def claim_session(db: Session, user_id: int, token_id: int) -> AutomationSession
         )
         if s is None:
             return None
+    resumed = s.state != "queued"
+    if s.state == "submitting" or s.submit_clicked_at is not None:
+        # The runner stopped after clicking submit: never click again; the outcome must be checked by the user.
+        s.state, s.phase = "submitted_unverified", "SUBMISSION_UNCERTAIN"
+        s.message = (
+            "The runner stopped while submitting, so CareerPilot cannot tell whether the employer received the "
+            "application. Check the employer's portal or your email; nothing will be submitted again."
+        )
+        _log(s, s.message, s.phase)
+        db.commit()
+        return None
+    if s.state == "submit_confirmed":
+        # The confirmed form was lost with the old browser; the refilled form must be confirmed again.
+        s.submit_confirmed_at = None
+        _log(s, "Your submit confirmation was cleared because the browser restarted; review and confirm again")
     s.runner_token_id = token_id
     s.state = "running"
-    s.message = "Opening the application page..."
+    s.phase = "RESUMING" if resumed else "OPENING_PAGE"
+    s.message = "Runner reconnected; resuming the application..." if resumed else "Opening the application page..."
     s.last_heartbeat_at = datetime.now(UTC)
     s.filled_revision = -1
-    _log(s, "Runner claimed the session")
+    _log(s, "Runner reconnected and is resuming" if resumed else "Runner connected and picked up the task", s.phase)
     db.commit()
     return s
 
 
-def _log(s: AutomationSession, message: str) -> None:
+def _log(s: AutomationSession, message: str, phase: str = "") -> None:
     entry = {"at": datetime.now(UTC).isoformat(timespec="seconds"), "message": message[:300]}
-    s.log = (list(s.log or []) + [entry])[-60:]
+    if phase:
+        entry["phase"] = phase
+    s.log = (list(s.log or []) + [entry])[-120:]
+
+
+PHASES = (
+    "CREATED",
+    "QUEUED",
+    "RUNNER_OFFLINE",
+    "RUNNER_CONNECTED",
+    "OPENING_PAGE",
+    "INSPECTING_PAGE",
+    "MAPPING_FORM",
+    "FILLING_FORM",
+    "UPLOADING_RESUME",
+    "WAITING_FOR_USER",
+    "RESUMING",
+    "VALIDATING_FORM",
+    "READY_TO_SUBMIT",
+    "SUBMITTING",
+    "VERIFYING_SUBMISSION",
+    "SUBMITTED",
+    "SUBMISSION_UNCERTAIN",
+    "BLOCKED",
+    "FAILED",
+    "CANCELLED",
+)
+_STATE_PHASE = {
+    "action_required": "WAITING_FOR_USER",
+    "awaiting_answers": "WAITING_FOR_USER",
+    "awaiting_review": "READY_TO_SUBMIT",
+    "submit_confirmed": "SUBMITTING",
+    "submitted": "SUBMITTED",
+    "submitted_unverified": "SUBMISSION_UNCERTAIN",
+    "unsupported": "BLOCKED",
+    "failed": "FAILED",
+    "cancelled": "CANCELLED",
+}
+
+
+def display_phase(s: AutomationSession, runner_online: bool) -> str:
+    if s.state == "queued":
+        return "QUEUED" if runner_online else "RUNNER_OFFLINE"
+    if s.state not in AUTOMATION_TERMINAL and not runner_online:
+        return "RUNNER_OFFLINE"  # whatever it was doing, nothing happens until the runner is back
+    if s.state in _STATE_PHASE:
+        return _STATE_PHASE[s.state]
+    return s.phase if s.phase in PHASES else "INSPECTING_PAGE"
+
+
+def record_event(db: Session, s: AutomationSession, phase: str, message: str) -> None:
+    if phase in PHASES:
+        s.phase = phase
+    s.last_heartbeat_at = datetime.now(UTC)
+    _log(s, message, phase)
+
+
+RUNNER_ONLINE_SECONDS = 15
+
+
+def runner_status(db: Session, user_id: int) -> dict:
+    """Whether a CareerPilot Runner is connected for this user right now, and what it is doing."""
+    from app.models import ApiToken
+
+    now = datetime.now(UTC)
+    tokens = db.scalars(select(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None))).all()
+    runners = []
+    for t in tokens:
+        if t.runner_seen_at is None:
+            continue
+        age = (now - t.runner_seen_at).total_seconds()
+        runners.append(
+            {
+                "name": t.name,
+                "host": t.runner_host,
+                "version": t.runner_version,
+                "online": age <= RUNNER_ONLINE_SECONDS,
+                "state": t.runner_state if age <= RUNNER_ONLINE_SECONDS else "offline",
+                "detail": t.runner_detail,
+                "last_seen_at": t.runner_seen_at.isoformat(),
+                "last_seen_seconds": int(age),
+            }
+        )
+    runners.sort(key=lambda r: r["last_seen_seconds"])
+    online = [r for r in runners if r["online"]]
+    return {
+        "connected": bool(online),
+        "state": online[0]["state"] if online else "offline",
+        "detail": online[0]["detail"] if online else "",
+        "installed": bool(tokens),
+        "ever_connected": bool(runners),
+        "runners": runners,
+    }
+
+
+def continue_session(db: Session, a: Application) -> AutomationSession:
+    s = latest_session(db, a.id)
+    if s is None or s.state in AUTOMATION_TERMINAL:
+        raise AppError("There is no application in progress to continue.", code="not_running")
+    s.resume_nonce += 1
+    _log(s, "You asked the agent to continue", "RESUMING")
+    db.commit()
+    return s
 
 
 def get_runner_session(db: Session, user_id: int, token_id: int, session_id: int) -> AutomationSession:
@@ -268,6 +390,8 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
         "draft_fn": _draft_fn(db, a),
     }
     existing = {f.field_ref: f for f in a.fields}
+    # After a page reload or a runner restart the same fields come back with new references.
+    by_shape = {(f.label, f.input_type, f.step): f for f in a.fields}
     pos = max([f.position for f in a.fields], default=-1) + 1
     for raw in fields[:200]:
         ref = str(raw.get("field_ref", ""))[:300]
@@ -281,6 +405,11 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
             options=[str(o)[:200] for o in (raw.get("options") or [])][:200],
             step=int(raw.get("step", 0)),
         )
+        same = by_shape.get((fi.label, fi.input_type, fi.step))
+        if ref not in existing and same is not None:
+            existing.pop(same.field_ref, None)
+            same.field_ref = ref
+            existing[ref] = same
         if ref in existing:
             f = existing[ref]
             f.required, f.options, f.step = fi.required, fi.options or [], fi.step
@@ -311,9 +440,26 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
             db.add(ApplicationAnswer(application_id=a.id, question=fi.label, answer=m.value, source="draft"))
     s.answers_revision += 1
     s.state = "filling"
+    s.phase = "FILLING_FORM"
     s.message = "Filling the fields CareerPilot can answer..."
-    _log(s, f"Form inspected: {len(fields)} field(s) on step {s.step + 1}")
+    _update_progress(s, a)
+    auto = sum(1 for f in a.fields if f.step == s.step and f.status in ("filled", "confirmed"))
+    _log(
+        s,
+        f"{len(fields)} fields identified on page {s.step + 1}; {auto} can be filled from your profile",
+        "MAPPING_FORM",
+    )
     db.commit()
+
+
+def _update_progress(s: AutomationSession, a: Application) -> None:
+    relevant = [
+        f for f in a.fields if f.required or f.value or f.status == "needs_confirmation" or f.field_key == "consent"
+    ]
+    s.fields_total = len(relevant)
+    s.fields_done = sum(
+        1 for f in relevant if f.status in ("filled", "confirmed", "skipped") and (f.value or f.status == "skipped")
+    )
 
 
 def fill_plan(db: Session, s: AutomationSession) -> list[dict]:
@@ -363,6 +509,12 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
             pass
     if isinstance(report.get("filled_revision"), int):
         s.filled_revision = report["filled_revision"]
+    if report.get("phase") in PHASES:
+        s.phase = report["phase"]
+    if report.get("platform"):
+        s.platform = str(report["platform"])[:40]
+    if report.get("resume_uploaded") is not None:
+        s.resume_uploaded = bool(report["resume_uploaded"])
     by_ref = {f.field_ref: f for f in a.fields}
     for r in report.get("fill_results") or []:
         f = by_ref.get(str(r.get("field_ref")))
@@ -397,12 +549,21 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
     if s.state == "submit_confirmed" and state in ("awaiting_review", "awaiting_answers", "filling", "running"):
         # the runner is still settling; keep the user's confirmation pending
         state = "submit_confirmed"
+    if state == "submitting" and s.submit_clicked_at is None:
+        s.submit_clicked_at = datetime.now(UTC)
     s.state = state
+    if state in _STATE_PHASE and state != "submit_confirmed":
+        s.phase = _STATE_PHASE[state]
+    _update_progress(s, a)
 
     if state == "submitted":
         s.result_text = str(report.get("result_text") or "")[:2000]
         a.confirmation_text = s.result_text
-        set_status(db, a, "submitted", "Application submitted - confirmation detected on the page", verified=True)
+        a.confirmation_id = str(report.get("confirmation_id") or "")[:120]
+        note = "Application submitted - confirmation detected on the page"
+        if a.confirmation_id:
+            note += f" (application ID {a.confirmation_id})"
+        set_status(db, a, "submitted", note, verified=True)
         db.add(
             ApplicationEvent(
                 application_id=a.id,
@@ -443,7 +604,9 @@ def _record_answers(db: Session, a: Application) -> None:
             )
 
 
-def update_field(db: Session, a: Application, field_id: int, value: str | None, confirm: bool, skip: bool) -> None:
+def update_field(
+    db: Session, a: Application, field_id: int, value: str | None, confirm: bool, skip: bool, remember: bool = False
+) -> None:
     f = next((x for x in a.fields if x.id == field_id), None)
     if f is None:
         raise NotFound("Field")
@@ -476,13 +639,38 @@ def update_field(db: Session, a: Application, field_id: int, value: str | None, 
             )
         else:
             f.status = "needs_input"
+    if remember and f.value and f.status != "skipped":
+        _remember_answer(db, a.user_id, f)
     s = latest_session(db, a.id)
     if s and s.state not in AUTOMATION_TERMINAL:
+        _update_progress(s, a)
         s.answers_revision += 1
         if s.state in ("awaiting_answers", "awaiting_review"):
             s.state = "filling"
             s.message = "Applying your answers..."
     db.commit()
+
+
+def _remember_answer(db: Session, user_id: int, f: ApplicationField) -> None:
+    """Saves an answer for future applications - only when the user explicitly asked to remember it."""
+    key = (f.field_key or re.sub(r"[^a-z0-9]+", "_", f.label.lower()).strip("_"))[:80]
+    if not key or f.input_type == "file":
+        return
+    pa = db.scalar(select(ProfileAnswer).where(ProfileAnswer.user_id == user_id, ProfileAnswer.question_key == key))
+    if pa is None:
+        pa = ProfileAnswer(user_id=user_id, question_key=key)
+        db.add(pa)
+    pa.label, pa.answer, pa.sensitive = f.label[:300], f.value, bool(f.sensitive)
+
+
+PROVENANCE = {
+    "user": "USER_CONFIRMED",
+    "saved_answer": "USER_CONFIRMED",
+    "profile": "CAREER_PROFILE",
+    "resume": "CAREER_PROFILE",
+    "job": "JOB_SPECIFIC",
+    "draft": "AI_SUGGESTED",
+}
 
 
 def confirm_submit(db: Session, a: Application, typed: str, ip: str = "") -> AutomationSession:
@@ -529,3 +717,40 @@ def cancel_session(db: Session, a: Application) -> None:
 
 def _loose(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+SAFE_KEYS = {
+    "first_name",
+    "last_name",
+    "preferred_name",
+    "full_name",
+    "email",
+    "phone",
+    "linkedin",
+    "github",
+    "portfolio",
+    "current_company",
+    "current_title",
+    "school",
+    "degree",
+    "discipline",
+    "graduation_year",
+    "gpa",
+    "location",
+    "country",
+    "resume",
+    "cover_letter",
+}
+PROFILE_REQUIRED_KEYS = {"years_experience", "work_authorization", "sponsorship", "notice_period", "start_date"}
+JOB_DECISION_KEYS = {"salary", "relocate", "how_heard", "referral", "why_company", "additional_info"}
+
+
+def question_category(f: ApplicationField) -> str:
+    """How much judgment a question needs: safe auto-fill, verified profile fact, job-specific decision, sensitive."""
+    if f.sensitive:
+        return "SENSITIVE"
+    if f.field_key in SAFE_KEYS:
+        return "SAFE_AUTOFILL"
+    if f.field_key in PROFILE_REQUIRED_KEYS:
+        return "VERIFIED_PROFILE_REQUIRED"
+    return "JOB_SPECIFIC_DECISION"

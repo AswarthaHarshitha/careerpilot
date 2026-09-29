@@ -11,6 +11,7 @@ import { useAuth } from '../lib/auth'
 import { fmtDateTime, relative } from '../lib/format'
 import type { SettingsData, Template } from '../lib/types'
 import { AIUsagePanel, ProviderChoice, ProviderList } from '../components/AIProviders'
+import { RunnerCard, useAgentStatus } from '../components/AgentStatus'
 
 type S = SettingsData
 type TabKey = 'resume' | 'github' | 'applications' | 'automation' | 'ai' | 'notifications' | 'security' | 'data'
@@ -147,22 +148,25 @@ function Automation() {
   const create = useMutation({ mutationFn: () => post<{ token: string }>('/api/settings/runner-tokens', { name }), onSuccess: (r) => { setCreated(r.token); qc.invalidateQueries({ queryKey: ['runner-tokens'] }) } })
   const revoke = useMutation({ mutationFn: (id: number) => del(`/api/settings/runner-tokens/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['runner-tokens'] }) })
   const origin = window.location.origin
-  const cmd = `cd careerpilot/backend\nuv sync --extra automation && uv run playwright install chromium\nuv run careerpilot-runner --api ${origin} --token ${created ?? '<token>'}`
+  const cmd = `cd careerpilot/backend\nuv sync --extra automation && uv run playwright install chromium\nuv run careerpilot-runner install --api ${origin} --token ${created ?? '<token>'}`
+  const agent = useAgentStatus()
   return (
     <>
       <Card>
-        <CardHeader title="Apply agent" subtitle="Runs on your computer and fills application forms in a real browser window you can see." />
+        <CardHeader title="CareerPilot Runner" subtitle="Runs on your computer and fills application forms in a real browser window you can see." />
         <div className="space-y-3 p-5 text-[13px] text-ink-2">
-          <p>Employer sites need a real browser, your own sign-ins, and sometimes a CAPTCHA only you can solve, so form filling runs on your machine rather than on the server. The agent never sees your employer-site passwords; your logins stay in its local browser profile.</p>
+          {agent.data && <RunnerCard runner={agent.data.runner} compact />}
+          <p>Employer sites need a real browser, your own sign-ins, and sometimes a CAPTCHA only you can solve, so form filling runs on your machine rather than on the server. The runner never sees your employer-site passwords; your logins stay in its local browser profile.</p>
           <ol className="list-decimal space-y-1 pl-5">
             <li>Create a token below.</li>
-            <li>In a terminal, from the CareerPilot repository, run:</li>
+            <li>Install the runner once. It starts with your computer and connects automatically:</li>
           </ol>
           <div className="relative">
             <pre className="overflow-x-auto rounded-md border border-line bg-surface-2 p-3 font-mono text-[12px] text-ink">{cmd}</pre>
             <Button size="sm" variant="ghost" className="absolute right-1.5 top-1.5" icon={<ClipboardCopy className="size-3.5" />} onClick={() => { navigator.clipboard.writeText(cmd); toast('Copied') }} aria-label="Copy command" />
           </div>
-          <p>Then choose “Prepare application” on any job. Supported: Greenhouse, Lever, Ashby and standard HTML application forms. Workday, Taleo, SuccessFactors and iCIMS need you to sign in inside the agent's window; multi-step forms are followed step by step and unrecognised questions are left for you.</p>
+          <p>For development, run it in a terminal instead with <code className="font-mono text-[12px]">uv run careerpilot-runner --api {origin} --token …</code>. To stop starting it automatically: <code className="font-mono text-[12px]">uv run careerpilot-runner uninstall</code>.</p>
+          <p>Then choose “Apply with CareerPilot” on any application. Greenhouse, Lever, Ashby, SmartRecruiters and standard HTML forms are filled directly; Workday, Taleo, Oracle, SuccessFactors and iCIMS need you to sign in inside the runner's window first. Multi-page forms are followed page by page, and questions only you can answer are left for you.</p>
         </div>
       </Card>
       <Card>
@@ -183,7 +187,7 @@ function Automation() {
             {q.data?.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
                 <div><span className="font-medium">{t.name}</span> <span className="font-mono text-[12px] text-muted">{t.prefix}…</span>
-                  <div className="text-[11.5px] text-muted">Created {fmtDateTime(t.created_at)} · {t.last_used_at ? `last used ${relative(t.last_used_at)}` : 'never used'}</div></div>
+                  <div className="text-[11.5px] text-muted">Created {fmtDateTime(t.created_at)} · {(() => { const r = agent.data?.runner.runners.find((x) => x.name === t.name); return r ? (r.online ? `connected${r.host ? ` from ${r.host}` : ''}` : `last seen ${relative(r.last_seen_at)}`) : t.last_used_at ? `last used ${relative(t.last_used_at)}` : 'never connected' })()}</div></div>
                 <Button size="sm" variant="danger" onClick={() => revoke.mutate(t.id)}>Revoke</Button>
               </li>
             ))}

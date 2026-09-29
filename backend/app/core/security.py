@@ -109,3 +109,36 @@ def mask_secret(value: str) -> str:
     if not value:
         return ""
     return "•" * 6 + value[-4:] if len(value) > 8 else "•" * len(value)
+
+
+# --- apply-agent (runner) authentication --------------------------------------------------------------
+# The long-lived runner token (shown once, stored only as a hash) is exchanged for a short-lived access
+# token scoped to that runner. Task payloads sent to the runner are signed with a key both sides derive from
+# the runner token, so the runner only acts on instructions that came from CareerPilot for its own user.
+
+RUNNER_AUDIENCE = "careerpilot-runner"
+RUNNER_ACCESS_MINUTES = 15
+
+
+def encode_runner_access(token_id: int, user_id: int) -> tuple[str, datetime]:
+    expires = datetime.now(UTC) + timedelta(minutes=RUNNER_ACCESS_MINUTES)
+    payload = {"tid": token_id, "uid": user_id, "aud": RUNNER_AUDIENCE, "exp": int(expires.timestamp())}
+    return jwt.encode(payload, get_settings().jwt_secret, "HS256"), expires
+
+
+def decode_runner_access(token: str) -> dict | None:
+    try:
+        return jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"], audience=RUNNER_AUDIENCE)
+    except jwt.PyJWTError:
+        return None
+
+
+def canonical_json(payload: dict) -> bytes:
+    import json
+
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode()
+
+
+def sign_task(token_hash: str, payload: dict) -> str:
+    """HMAC-SHA256 over the canonical payload; the key is the SHA-256 of the runner token."""
+    return hmac.new(bytes.fromhex(token_hash), canonical_json(payload), hashlib.sha256).hexdigest()

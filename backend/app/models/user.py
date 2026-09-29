@@ -48,6 +48,12 @@ class ApiToken(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Presence of the runner using this token: updated on every request it makes.
+    runner_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    runner_state: Mapped[str] = mapped_column(String(20), default="")  # idle | working | waiting | blocked
+    runner_detail: Mapped[str] = mapped_column(String(300), default="")
+    runner_host: Mapped[str] = mapped_column(String(120), default="")
+    runner_version: Mapped[str] = mapped_column(String(40), default="")
 
 
 class UserSettings(Base):

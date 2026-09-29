@@ -127,6 +127,70 @@ LOGIN_PAGE = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE -->
 CAPTCHA_PAGE = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE -->
 <h1>Apply</h1><iframe src="/recaptcha/api2/anchor" width="300" height="80"></iframe></body></html>"""
 
+# --- multi-page application used by the agent end-to-end test ---------------------------------------------
+# Three pages, a CAPTCHA between pages 1 and 2 that only "the user" can clear, and injected faults: the first
+# page load fails (HTTP 503), the resume input rejects the first attachment, page 2 re-renders its inputs (stale
+# elements) and raises an alert, and page 3 opens slowly.
+AGENT = {"loads": 0, "captcha_solved": False, "submissions": []}
+
+MULTI_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Acme Robotics - Apply</title>
+<style>.page{display:none}.page.on{display:block}#captcha{margin:12px 0}</style></head>
+<body><!-- LOCAL TEST FIXTURE: multi-page application -->
+<h1>Backend Engineer - Acme Robotics</h1>
+<form id="app" method="post" action="/careers/acme/apply/900" enctype="multipart/form-data" novalidate>
+ <section class="page on" id="p1">
+  <div><label for="a-fn">First name *</label><input id="a-fn" name="first_name" required></div>
+  <div><label for="a-ln">Last name *</label><input id="a-ln" name="last_name" required></div>
+  <div><label for="a-em">Email address *</label><input id="a-em" name="email" type="email" required></div>
+  <div><label for="a-ph">Phone number</label><input id="a-ph" name="phone" type="tel"></div>
+  <div><label for="a-cv">Resume *</label><input id="a-cv" name="resume" type="file" accept=".pdf" required></div>
+  <button type="button" class="next" data-to="p2">Continue</button>
+ </section>
+ <section class="page" id="p2"><div id="p2-fields"></div><button type="button" class="next" data-to="p3">Continue</button></section>
+ <section class="page" id="p3">
+  <div><label for="a-why">Why do you want to join Acme Robotics? *</label><textarea id="a-why" name="why" required></textarea></div>
+  <div><label for="a-src">How did you hear about us?</label><select id="a-src" name="source"><option value="">Select...</option>
+   <option>Company website</option><option>LinkedIn</option><option>Referral</option></select></div>
+  <div><label><input type="checkbox" id="a-ok" name="consent" required> I confirm the information is accurate *</label></div>
+  <button type="submit">Submit application</button>
+ </section>
+ <div id="captcha" style="display:none"><iframe src="/recaptcha/api2/anchor?k=test" width="300" height="80"></iframe></div>
+</form>
+<script>
+ let rejected = false;
+ const cv = document.getElementById('a-cv');
+ cv.addEventListener('change', () => { if (!rejected) { rejected = true; cv.value = ''; } });
+ const P2 = `<div><label for="a-li">LinkedIn URL</label><input id="a-li" name="linkedin" type="url"></div>
+  <div><label for="a-auth">Are you authorized to work in India? *</label><select id="a-auth" name="authorized" required>
+   <option value="">Select...</option><option>Yes</option><option>No</option></select></div>
+  <div><label for="a-yoe">Years of professional experience</label><input id="a-yoe" name="years" type="number" step="0.5"></div>`;
+ function show(id) { document.querySelectorAll('.page').forEach(p => p.classList.remove('on')); document.getElementById(id).classList.add('on'); }
+ function gateCaptcha(then) {
+   const box = document.getElementById('captcha'); box.style.display = 'block';
+   const t = setInterval(async () => {
+     const st = await (await fetch('/careers/acme/captcha-state')).json();
+     if (st.solved) { clearInterval(t); box.style.display = 'none'; then(); }
+   }, 500);
+ }
+ document.querySelectorAll('.next').forEach(b => b.addEventListener('click', () => {
+   const to = b.dataset.to;
+   if (to === 'p2') {
+     const need = ['a-fn','a-ln','a-em'].filter(id => !document.getElementById(id).value);
+     if (need.length || !cv.files.length) { need.forEach(id => document.getElementById(id).setAttribute('aria-invalid','true')); return; }
+     document.getElementById('p1').classList.remove('on');
+     gateCaptcha(() => {
+       document.getElementById('p2-fields').innerHTML = P2; show('p2');
+       setTimeout(() => { document.getElementById('p2-fields').innerHTML = P2; alert('Progress saved'); }, 1200);
+     });
+   } else { setTimeout(() => show(to), 2500); }
+ }));
+</script></body></html>"""
+
+AGENT_THANKS = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE -->
+<h1>Thank you for applying!</h1><p>Your application has been received.</p><p>Application ID: ACME-2026-4821</p>
+</body></html>"""
+
+
 REPOS = {
     "taskflow-api": {
         "description": "Task tracking REST API with role-based access control",
@@ -217,6 +281,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, CAPTCHA_PAGE)
         if path.startswith("/recaptcha/"):
             return self._send(200, "<html><body>captcha</body></html>")
+        if path == "/careers/acme/apply/900":
+            AGENT["loads"] += 1
+            if AGENT["loads"] == 1:
+                return self._send(503, "temporarily unavailable")
+            return self._send(200, MULTI_PAGE)
+        if path == "/careers/acme/captcha-state":
+            return self._json({"solved": AGENT["captcha_solved"]})
+        if path == "/careers/acme/applied/900":
+            return self._send(200, AGENT_THANKS)
         if path == "/careers/redirect-internal":
             return self._send(302, "", headers={"Location": "http://169.254.169.254/latest/meta-data/"})
         # --- mock GitHub API ---
@@ -248,7 +321,8 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self):  # noqa: N802
-        if urlsplit(self.path).path != "/careers/ibm/apply/12345":
+        path = urlsplit(self.path).path
+        if path not in ("/careers/ibm/apply/12345", "/careers/acme/apply/900"):
             return self._send(404, "not found")
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
@@ -264,6 +338,9 @@ class Handler(BaseHTTPRequestHandler):
                 files[name] = {"filename": filename, "size": len(payload), "is_pdf": payload.startswith(b"%PDF")}
             else:
                 fields[name] = payload.decode(errors="replace")
+        if path == "/careers/acme/apply/900":
+            AGENT["submissions"].append({"fields": fields, "files": files})
+            return self._send(303, "", headers={"Location": "/careers/acme/applied/900"})
         missing = [
             k
             for k in ("first_name", "last_name", "email", "authorized", "sponsorship", "why", "consent")
@@ -289,6 +366,7 @@ class MockSite:
 
     def __enter__(self):
         SUBMISSIONS.clear()
+        AGENT.update(loads=0, captcha_solved=False, submissions=[])
         self.thread.start()
         return self
 

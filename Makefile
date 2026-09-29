@@ -1,4 +1,4 @@
-.PHONY: setup dev-api dev-web test test-backend test-web e2e lint build runner
+.PHONY: setup dev-api dev-web test test-backend test-web e2e e2e-pipeline e2e-agent lint build runner
 
 setup:
 	cd backend && uv sync && uv run playwright install chromium
@@ -18,8 +18,13 @@ test-backend:
 test-web:
 	cd frontend && npm test
 
-e2e:
+e2e: e2e-pipeline e2e-agent
+
+e2e-pipeline:
 	cd backend && uv run python ../e2e/run_e2e.py
+
+e2e-agent:
+	cd backend && uv run python ../e2e/run_agent_e2e.py
 
 lint:
 	cd backend && uv run ruff check app tests

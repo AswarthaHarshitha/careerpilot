@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import applications, auth, dashboard, jobs, profile, projects, resumes, runner, templates
+from app.api import agent, applications, auth, dashboard, jobs, profile, projects, resumes, runner, templates
 from app.api import settings as settings_api
 from app.core.config import get_settings
 from app.core.db import get_engine
@@ -161,7 +161,19 @@ def create_app() -> FastAPI:
         }
         return JSONResponse(status_code=200 if db_ok else 503, content=body)
 
-    for module in (auth, profile, templates, projects, jobs, resumes, applications, runner, settings_api, dashboard):
+    for module in (
+        auth,
+        profile,
+        templates,
+        projects,
+        jobs,
+        resumes,
+        applications,
+        runner,
+        settings_api,
+        dashboard,
+        agent,
+    ):
         app.include_router(module.router)
     return app
 

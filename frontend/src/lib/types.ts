@@ -295,6 +295,17 @@ export type AppField = {
   fill_result: string
   validation_message: string
   step: number
+  provenance: '' | 'USER_CONFIRMED' | 'CAREER_PROFILE' | 'JOB_SPECIFIC' | 'AI_SUGGESTED'
+  category: 'SAFE_AUTOFILL' | 'VERIFIED_PROFILE_REQUIRED' | 'JOB_SPECIFIC_DECISION' | 'SENSITIVE'
+}
+export type RunnerInfo = { name: string; host: string; version: string; online: boolean; state: string; detail: string; last_seen_at: string; last_seen_seconds: number }
+export type RunnerStatus = {
+  connected: boolean; state: 'idle' | 'working' | 'waiting' | 'blocked' | 'offline'; detail: string
+  installed: boolean; ever_connected: boolean; runners: RunnerInfo[]
+}
+export type AgentStatus = {
+  runner: RunnerStatus
+  task: null | { application_id: number; company: string; role_title: string; phase: string; message: string; resume_version: number | null; fields_total: number; fields_done: number; waiting_for: string[] }
 }
 export type AutomationSession = {
   id: number
@@ -304,7 +315,13 @@ export type AutomationSession = {
   step: number
   platform: string
   has_screenshot: boolean
-  log: { at: string; message: string }[]
+  log: { at: string; message: string; phase?: string }[]
+  phase: string
+  runner_online: boolean
+  fields_total: number
+  fields_done: number
+  resume_uploaded: boolean
+  submit_clicked_at: string | null
   answers_revision: number
   filled_revision: number
   submit_confirmed_at: string | null
@@ -338,7 +355,9 @@ export type Application = {
   answers?: { question: string; answer: string; source: string; confirmed: boolean }[]
   fields?: AppField[]
   session?: AutomationSession | null
+  runner?: RunnerStatus
   confirmation_text?: string
+  confirmation_id?: string
 }
 
 export type InstructionControls = {

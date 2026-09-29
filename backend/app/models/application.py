@@ -102,6 +102,7 @@ class Application(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     submission_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     confirmation_text: Mapped[str] = mapped_column(Text, default="")
+    confirmation_id: Mapped[str] = mapped_column(String(120), default="")  # application ID shown by the employer
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
@@ -203,6 +204,14 @@ class AutomationSession(Base):
     answers_revision: Mapped[int] = mapped_column(Integer, default=0)
     filled_revision: Mapped[int] = mapped_column(Integer, default=-1)
     submit_confirmed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Fine-grained step reported by the runner (OPENING_PAGE, MAPPING_FORM, UPLOADING_RESUME, ...).
+    phase: Mapped[str] = mapped_column(String(30), default="")
+    # Bumped when the user clicks "Continue application" after a CAPTCHA, sign-in or other hand-off.
+    resume_nonce: Mapped[int] = mapped_column(Integer, default=0)
+    submit_clicked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    fields_total: Mapped[int] = mapped_column(Integer, default=0)
+    fields_done: Mapped[int] = mapped_column(Integer, default=0)
+    resume_uploaded: Mapped[bool] = mapped_column(Boolean, default=False)
     result_text: Mapped[str] = mapped_column(Text, default="")
     log: Mapped[list] = mapped_column(JSON, default=list)
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime)

@@ -9,6 +9,7 @@ import { post } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { JobSummary } from '../lib/types'
 import { Button, Dialog, ErrorState, Input, Kbd, cx } from './ui'
+import { SidebarAgentStatus } from './AgentStatus'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -118,6 +119,7 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
+        <SidebarAgentStatus />
         <div className="border-t border-line p-3">
           <div className="flex items-center gap-2 px-1">
             <div className="flex size-7 items-center justify-center rounded-full bg-surface-3 text-[12px] font-semibold text-ink-2">

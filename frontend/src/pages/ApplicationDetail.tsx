@@ -1,17 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  AlertTriangle, Bot, CheckCircle2, ExternalLink, Eye, Loader2, Lock, MonitorSmartphone, Play, ShieldAlert, X,
+  AlertTriangle, CheckCircle2, ExternalLink, Eye, Loader2, Lock, Play, ShieldAlert, X,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { EventTimeline, PHASE_LABEL, PhaseSteps, RunnerCard } from '../components/AgentStatus'
 import { Page } from '../components/AppShell'
 import {
   Badge, Button, Card, CardHeader, Dialog, ErrorState, Field, Input, LoadingRows, Select, StatusBadge, Textarea, cx,
   errorText, useToast,
 } from '../components/ui'
 import { api, get, patch, post } from '../lib/api'
-import { daysLabel, fmtDate, fmtDateTime, relative, STATUS_LABEL, STATUS_ORDER } from '../lib/format'
+import { daysLabel, fmtDate, fmtDateTime, STATUS_LABEL, STATUS_ORDER } from '../lib/format'
 import type { AppField, Application, AppStatus, ResumeVersion } from '../lib/types'
 
 const ACTIVE = ['queued', 'running', 'action_required', 'awaiting_answers', 'filling', 'awaiting_review', 'submit_confirmed', 'submitting']
@@ -80,7 +81,7 @@ function Header({ a }: { a: Application }) {
           <div className="text-[13px]">
             <div className="font-semibold">{a.submission_verified ? 'Application submitted successfully' : 'Marked as submitted'}</div>
             <div className="text-ink-2">
-              {a.company} · {a.role_title}{a.job_code ? ` · Job ID ${a.job_code}` : ''} · Submitted {fmtDateTime(a.submitted_at)}
+              {a.company} · {a.role_title}{a.job_code ? ` · Job ID ${a.job_code}` : ''}{a.confirmation_id ? ` · Application ID ${a.confirmation_id}` : ''} · Submitted {fmtDateTime(a.submitted_at)}
               {a.resume_version && <> · Resume <Link to={`/resumes/${a.resume_version.id}`} className="underline">{a.company} {a.role_title} v{a.resume_version.version_number}</Link></>}
             </div>
             {!a.submission_verified && <div className="mt-0.5 text-muted">Set by hand; CareerPilot did not see a confirmation from the employer's site.</div>}
@@ -91,95 +92,80 @@ function Header({ a }: { a: Application }) {
   )
 }
 
-const STATE_COPY: Record<string, { title: string; tone: 'neutral' | 'active' | 'attention' | 'done' | 'bad' }> = {
-  queued: { title: 'Waiting for the apply agent', tone: 'attention' },
-  running: { title: 'Opening the application', tone: 'active' },
-  action_required: { title: 'Manual action required', tone: 'attention' },
-  awaiting_answers: { title: 'Some questions need you', tone: 'attention' },
-  filling: { title: 'Filling the form', tone: 'active' },
-  awaiting_review: { title: 'Ready for your review', tone: 'attention' },
-  submit_confirmed: { title: 'Submitting…', tone: 'active' },
-  submitting: { title: 'Submitting…', tone: 'active' },
-  submitted: { title: 'Submitted - confirmation detected', tone: 'done' },
-  submitted_unverified: { title: 'Submission status could not be verified', tone: 'bad' },
-  unsupported: { title: 'This portal is not supported', tone: 'bad' },
-  failed: { title: 'The agent stopped', tone: 'bad' },
-  cancelled: { title: 'Cancelled - nothing was submitted', tone: 'neutral' },
-}
-
 function AssistedApply({ a }: { a: Application }) {
   const qc = useQueryClient()
   const toast = useToast()
   const s = a.session
+  const runner = a.runner
   const resumes = useQuery({ queryKey: ['resumes', a.job_id], queryFn: () => get<ResumeVersion[]>(`/api/resumes?job_id=${a.job_id}`) })
   const [resumeId, setResumeId] = useState<string>('')
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const refresh = (d: Application) => qc.setQueryData(['application', String(a.id)], d)
+  const refresh = (d: Application) => { qc.setQueryData(['application', String(a.id)], d); qc.invalidateQueries({ queryKey: ['agent-status'] }) }
   const start = useMutation({
     mutationFn: () => post<Application>(`/api/applications/${a.id}/automation`, { resume_version_id: resumeId ? Number(resumeId) : null }),
     onSuccess: refresh,
   })
   const cancel = useMutation({ mutationFn: () => post<Application>(`/api/applications/${a.id}/automation/cancel`), onSuccess: refresh })
+  const resume = useMutation({ mutationFn: () => post<Application>(`/api/applications/${a.id}/automation/continue`), onSuccess: (d) => { refresh(d); toast('The agent is looking at the page again') }, onError: (e) => toast(errorText(e), 'error') })
   const active = s && ACTIVE.includes(s.state)
   const fields = a.fields ?? []
   const pending = fields.filter((f) => (f.status === 'needs_input' && (f.required || f.field_key === 'consent')) || f.status === 'needs_confirmation')
-  const copy = s ? STATE_COPY[s.state] ?? { title: s.state, tone: 'neutral' } : null
   const readyToSubmit = s?.state === 'awaiting_review' && pending.length === 0 && s.filled_revision >= s.answers_revision
+  const rv = a.resume_version
+  const waitingHuman = s?.phase === 'WAITING_FOR_USER' && s.state === 'action_required'
 
   return (
     <>
       <Card>
-        <CardHeader title="Assisted application"
-          subtitle="The apply agent fills the employer's form in a browser window on your computer. Final submission always needs your confirmation."
+        <CardHeader title="Apply with CareerPilot"
+          subtitle="The runner opens the employer's application in a browser on your computer, fills it from your profile, and pauses whenever a person is needed. Final submission always needs your confirmation."
           actions={active && <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} loading={cancel.isPending} onClick={() => cancel.mutate()}>Cancel</Button>} />
-        <div className="p-4">
-          {!s || !active ? (
+        <div className="space-y-4 p-4">
+          {runner && (!s || active) && <RunnerCard runner={runner} />}
+          {s && (
             <div className="space-y-3">
-              {s && copy && (
-                <div className={cx('rounded-md border px-3 py-2.5 text-[13px]', copy.tone === 'done' ? 'border-strong/25 bg-strong-soft' : copy.tone === 'bad' ? 'border-missing/25 bg-missing-soft/60' : 'border-line bg-surface-2')}>
-                  <div className="font-medium">{copy.title}</div>
-                  {s.message && <div className="mt-0.5 text-ink-2">{s.message}</div>}
-                  {s.result_text && <div className="mt-1 text-[12.5px] italic text-muted">“{s.result_text.slice(0, 240)}”</div>}
+              <PhaseSteps phase={s.phase} />
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-md border border-line bg-surface-2/40 px-3 py-2.5 text-[12.5px] sm:grid-cols-4">
+                <div className="col-span-2"><dt className="text-muted">Current task</dt>
+                  <dd className="flex items-center gap-1.5 font-medium">{active && s.phase !== 'WAITING_FOR_USER' && s.phase !== 'RUNNER_OFFLINE' && <Loader2 className="size-3.5 animate-spin text-accent" />}{PHASE_LABEL[s.phase] ?? s.phase}</dd></div>
+                <div><dt className="text-muted">Resume</dt><dd>{rv ? `v${rv.version_number}` : '—'}{s.resume_uploaded ? ' · uploaded' : ''}</dd></div>
+                <div><dt className="text-muted">Progress</dt><dd className="tabular-nums">{s.fields_total ? `${s.fields_done} / ${s.fields_total} fields` : '—'}</dd></div>
+                <div className="col-span-2 sm:col-span-4"><dt className="text-muted">{s.phase === 'WAITING_FOR_USER' ? 'Waiting for' : 'Status'}</dt>
+                  <dd className={cx(s.phase === 'WAITING_FOR_USER' && 'text-ink', ['BLOCKED', 'FAILED', 'SUBMISSION_UNCERTAIN'].includes(s.phase) && 'text-missing')}>
+                    {s.phase === 'WAITING_FOR_USER' && pending.length > 0 && s.state !== 'action_required'
+                      ? `${pending.length} answer${pending.length > 1 ? 's' : ''} from you: ${pending.slice(0, 2).map((f) => f.label).join('; ')}${pending.length > 2 ? '…' : ''}`
+                      : s.message}
+                  </dd></div>
+              </dl>
+              {waitingHuman && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-partial/30 bg-partial-soft/50 px-3 py-2.5 text-[13px]">
+                  <div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0 text-partial" /><span>The browser is open and waiting. Finish that step in the browser window, then continue.</span></div>
+                  <Button size="sm" variant="primary" loading={resume.isPending} onClick={() => resume.mutate()}>Continue application</Button>
                 </div>
               )}
-              {a.status !== 'submitted' && (
-                <div className="flex flex-wrap items-end gap-2">
-                  <Field label="Resume to upload" className="min-w-[220px] flex-1">
-                    <Select value={resumeId || String(a.resume_version?.id ?? '')} onChange={(e) => setResumeId(e.target.value)}>
-                      {!a.resume_version && <option value="">Choose a version…</option>}
-                      {resumes.data?.filter((r) => r.has_pdf).map((r) => <option key={r.id} value={r.id}>Version {r.version_number}{r.status === 'approved' ? ' (approved)' : ''}</option>)}
-                    </Select>
-                  </Field>
-                  <Button variant="primary" icon={<Play className="size-3.5" />} loading={start.isPending} onClick={() => start.mutate()}>
-                    {s ? 'Start again' : 'Prepare application'}
-                  </Button>
-                  {a.application_url && <a href={a.application_url} target="_blank" rel="noreferrer noopener"><Button icon={<ExternalLink className="size-3.5" />}>Apply manually</Button></a>}
-                </div>
-              )}
-              {start.error && <ErrorState compact error={start.error} />}
-              <p className="text-[12px] text-muted">
-                Needs the apply agent running on your computer (Settings → Browser automation). Supported: Greenhouse, Lever, Ashby and standard HTML forms. Sites that require sign-in (Workday, Taleo) work after you sign in yourself in the agent's window.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-start gap-3">
-                <span className={cx('mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full',
-                  copy?.tone === 'attention' ? 'bg-partial-soft text-partial' : 'bg-accent-soft text-accent')}>
-                  {s.state === 'action_required' ? <ShieldAlert className="size-4" /> : copy?.tone === 'active' ? <Loader2 className="size-4 animate-spin" /> : <Bot className="size-4" />}
-                </span>
-                <div className="min-w-0">
-                  <div className="text-[14px] font-semibold">{copy?.title}</div>
-                  <div className="text-[13px] text-ink-2">{s.message}</div>
-                  {s.state === 'queued' && (
-                    <div className="mt-1.5 flex items-center gap-1.5 text-[12.5px] text-muted"><MonitorSmartphone className="size-3.5" />Start the agent on your computer: <code className="rounded bg-surface-2 px-1 font-mono text-[11.5px]">careerpilot-runner</code></div>
-                  )}
-                  {s.last_heartbeat_at && <div className="mt-1 text-[11.5px] text-faint">Agent last seen {relative(s.last_heartbeat_at)}{s.step > 0 ? ` · form step ${s.step + 1}` : ''}</div>}
-                </div>
-              </div>
               {s.has_screenshot && <Screenshot appId={a.id} nonce={s.answers_revision + (s.log?.length ?? 0)} />}
+              <details open={!!active}>
+                <summary className="cursor-pointer text-[12.5px] font-medium text-ink-2">Activity</summary>
+                <div className="mt-2"><EventTimeline s={s} /></div>
+              </details>
             </div>
           )}
+          {(!s || !active) && a.status !== 'submitted' && (
+            <div className="flex flex-wrap items-end gap-2">
+              <Field label="Resume to upload" className="min-w-[220px] flex-1">
+                <Select value={resumeId || String(a.resume_version?.id ?? '')} onChange={(e) => setResumeId(e.target.value)}>
+                  {!a.resume_version && <option value="">Choose a version…</option>}
+                  {resumes.data?.filter((r) => r.has_pdf).map((r) => <option key={r.id} value={r.id}>Version {r.version_number}{r.status === 'approved' ? ' (approved)' : ''}</option>)}
+                </Select>
+              </Field>
+              <Button variant="primary" icon={<Play className="size-3.5" />} loading={start.isPending} onClick={() => start.mutate()}>
+                {s ? 'Start again' : 'Apply with CareerPilot'}
+              </Button>
+              {a.application_url && <a href={a.application_url} target="_blank" rel="noreferrer noopener"><Button icon={<ExternalLink className="size-3.5" />}>Apply manually</Button></a>}
+            </div>
+          )}
+          {start.error && <ErrorState compact error={start.error} />}
+          {!s && <p className="text-[12px] text-muted">Greenhouse, Lever, Ashby, SmartRecruiters and standard HTML forms are filled directly. Workday, Taleo, Oracle and SuccessFactors need you to sign in first in the runner's browser; CareerPilot continues after that. CAPTCHAs and sign-ins are always left to you.</p>}
         </div>
       </Card>
 
@@ -192,7 +178,7 @@ function AssistedApply({ a }: { a: Application }) {
               </Button>
             )} />
           <ul className="divide-y divide-line">
-            {fields.map((f) => <FieldRow key={f.id} f={f} appId={a.id} locked={!s || !['awaiting_answers', 'awaiting_review', 'filling'].includes(s.state)} onUpdated={refresh} onError={(e) => toast(errorText(e), 'error')} />)}
+            {fields.map((f) => <FieldRow key={f.id} f={f} appId={a.id} locked={!s || !['awaiting_answers', 'awaiting_review', 'filling', 'action_required'].includes(s.state)} onUpdated={refresh} onError={(e) => toast(errorText(e), 'error')} />)}
           </ul>
         </Card>
       )}
@@ -215,13 +201,15 @@ function Screenshot({ appId, nonce }: { appId: number; nonce: number }) {
   )
 }
 
-const sourceLabel: Record<string, string> = { profile: 'Profile', resume: 'Resume', saved_answer: 'Saved answer', draft: 'Draft', user: 'You', none: '' }
+const PROVENANCE_LABEL: Record<string, string> = { USER_CONFIRMED: 'Your answer', CAREER_PROFILE: 'Career profile', JOB_SPECIFIC: 'This job', AI_SUGGESTED: 'Suggested draft — not a fact until you confirm' }
+const CATEGORY_LABEL: Record<string, string> = { VERIFIED_PROFILE_REQUIRED: 'Profile fact', JOB_SPECIFIC_DECISION: 'Your decision', SENSITIVE: 'Sensitive' }
 
 function FieldRow({ f, appId, locked, onUpdated, onError }: { f: AppField; appId: number; locked: boolean; onUpdated: (a: Application) => void; onError: (e: unknown) => void }) {
   const [value, setValue] = useState(f.value)
   const [dirty, setDirty] = useState(false)
+  const [remember, setRemember] = useState(false)
   const m = useMutation({
-    mutationFn: (body: { value?: string | null; confirm?: boolean; skip?: boolean }) => patch<Application>(`/api/applications/${appId}/fields/${f.id}`, body),
+    mutationFn: (body: { value?: string | null; confirm?: boolean; skip?: boolean }) => patch<Application>(`/api/applications/${appId}/fields/${f.id}`, { ...body, remember }),
     onSuccess: (d) => { setDirty(false); onUpdated(d) },
     onError,
   })
@@ -234,13 +222,13 @@ function FieldRow({ f, appId, locked, onUpdated, onError }: { f: AppField; appId
           <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium">
             {f.label}{f.required && <span className="text-missing">*</span>}
             {f.sensitive && <Badge tone="verify"><Lock className="size-3" />Self-identification</Badge>}
-            {(f.field_key === 'work_authorization' || f.field_key === 'sponsorship') && <Badge tone="verify">Legal</Badge>}
+            {!f.sensitive && CATEGORY_LABEL[f.category] && <Badge tone="verify">{CATEGORY_LABEL[f.category]}</Badge>}
           </div>
           {f.note && <div className="mt-0.5 text-[12px] text-muted">{f.note}</div>}
           {f.validation_message && <div className="mt-0.5 text-[12px] text-missing">{f.validation_message}</div>}
         </div>
         <div className="flex items-center gap-1.5">
-          {sourceLabel[f.value_source] && <span className="text-[11.5px] text-faint">{sourceLabel[f.value_source]}</span>}
+          {f.value && PROVENANCE_LABEL[f.provenance] && <span className={cx('text-[11.5px]', f.provenance === 'AI_SUGGESTED' ? 'text-verify' : 'text-faint')}>{PROVENANCE_LABEL[f.provenance]}</span>}
           <Badge tone={f.status === 'filled' || f.status === 'confirmed' ? 'strong' : f.status === 'skipped' ? 'neutral' : 'partial'}>
             {f.status === 'needs_input' ? 'Needs your input' : f.status === 'needs_confirmation' ? 'Confirm' : f.status === 'confirmed' ? 'Confirmed' : f.status === 'skipped' ? 'Left blank' : f.fill_result === 'failed' ? 'Fill in browser' : 'Filled'}
           </Badge>
@@ -267,6 +255,12 @@ function FieldRow({ f, appId, locked, onUpdated, onError }: { f: AppField; appId
                 onClick={() => m.mutate({ value: f.field_key === 'consent' ? null : value, confirm: true })}>{f.field_key === 'consent' ? 'I accept' : 'Confirm'}</Button>}
               {needs && !f.required && f.field_key !== 'consent' && <Button size="sm" variant="ghost" onClick={() => m.mutate({ skip: true })}>Leave blank</Button>}
             </div>
+          )}
+          {!locked && (needs || dirty) && f.field_key !== 'consent' && !f.sensitive && (
+            <label className="flex basis-full items-center gap-1.5 text-[12px] text-muted">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="accent-[var(--accent)]" />
+              Remember this answer for future applications
+            </label>
           )}
         </div>
       )}
@@ -297,8 +291,9 @@ function ConfirmSubmit({ open, onClose, a, onDone }: { open: boolean; onClose: (
         <dt className="text-muted">Company</dt><dd className="font-medium">{a.company || '—'}</dd>
         <dt className="text-muted">Role</dt><dd className="font-medium">{a.role_title || '—'}</dd>
         <dt className="text-muted">Resume</dt><dd>{a.resume_version ? `Resume v${a.resume_version.version_number}` : 'None attached'}</dd>
-        <dt className="text-muted">Required fields</dt><dd>{required.every((f) => f.value || f.status === 'confirmed') ? 'Complete' : `${required.filter((f) => !f.value).length} empty`}</dd>
-        <dt className="text-muted">Unresolved fields</dt><dd className={unresolved.length ? 'font-medium text-missing' : ''}>{unresolved.length}</dd>
+        <dt className="text-muted">Required fields</dt><dd>{required.length ? `${Math.round(100 * required.filter((f) => f.value || f.status === 'confirmed').length / required.length)}% complete` : 'None'}</dd>
+        <dt className="text-muted">Unresolved questions</dt><dd className={unresolved.length ? 'font-medium text-missing' : ''}>{unresolved.length}</dd>
+        <dt className="text-muted">Resume uploaded</dt><dd>{a.session?.resume_uploaded ? 'Yes' : 'Not confirmed by the form'}</dd>
       </dl>
       <p className="text-[13px] text-ink-2">Only after you confirm will the agent click the employer's submit button for <span className="font-semibold text-ink">{a.role_title}</span> at <span className="font-semibold text-ink">{a.company}</span>. This cannot be undone.</p>
       <div className="mt-3 max-h-[220px] overflow-y-auto rounded-md border border-line bg-surface-2/40 p-3 text-[12.5px]">

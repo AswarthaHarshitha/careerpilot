@@ -71,6 +71,13 @@ INSPECT_JS = r"""
     if (['hidden', 'submit', 'button', 'reset', 'image', 'password', 'search'].includes(type)) continue;
     if (el.disabled) continue;
     if (type !== 'file' && !visible(el)) continue;
+    if (type === 'file') {  // styled file inputs hide themselves; a hidden page or section hides its fields
+      let hidden = false;
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        if (getComputedStyle(p).display === 'none') { hidden = true; break; }
+      }
+      if (hidden) continue;
+    }
     const required = !!(el.required || el.getAttribute('aria-required') === 'true');
     if (type === 'radio' || (type === 'checkbox' && el.name && document.querySelectorAll(
           `input[type=checkbox][name="${CSS.escape(el.name)}"]`).length > 1)) {
@@ -209,8 +216,28 @@ def find_button(page: Page, rx: re.Pattern, prefer_submit_type: bool = False):
     return matches[0] if matches else None
 
 
-def click_apply(page: Page) -> bool:
+def goto(page: Page, url: str, attempts: int = 3) -> tuple[bool, str]:
+    """Navigates with retries on timeouts and transient server errors. Returns (ok, reason)."""
+    reason = ""
+    for i in range(attempts):
+        try:
+            resp = page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            if resp is None or resp.status < 500:
+                return True, ""
+            reason = f"the site answered HTTP {resp.status}"
+        except PWTimeout:
+            reason = "the page did not load in time"
+        except Exception as exc:  # noqa: BLE001 - network errors surface as generic Playwright errors
+            reason = f"the page could not be opened ({type(exc).__name__})"
+        page.wait_for_timeout(1500 * (i + 1))
+    return False, reason
+
+
+def click_apply(page: Page, extra: tuple[str, ...] = ()) -> bool:
     hit = find_button(page, APPLY_TEXT)
+    if not hit and extra:
+        rx = re.compile(r"^\s*(" + "|".join(re.escape(t) for t in extra) + r")\s*$", re.I)
+        hit = find_button(page, rx)
     if not hit:
         return False
     f, b = hit
@@ -263,7 +290,14 @@ def fill_field(
         if action == "upload":
             if not resume_path:
                 return False, "Resume file unavailable."
-            loc.set_input_files(resume_path, timeout=10000)
+            name = resume_path.replace("\\", "/").rsplit("/", 1)[-1]
+            for _ in range(2):
+                loc.set_input_files(resume_path, timeout=10000)
+                page.wait_for_timeout(400)
+                attached = loc.evaluate("el => Array.from(el.files || []).map(f => f.name)")
+                if name in (attached or []):
+                    return True, ""
+            return False, "The resume did not attach. Attach it in the browser window."
         elif action == "check":
             if value.lower() in ("true", "yes", "1", "on"):
                 loc.check(timeout=5000)

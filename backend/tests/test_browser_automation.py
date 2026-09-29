@@ -223,10 +223,26 @@ def test_runner_cannot_report_submission_without_confirmation(auth_client, clien
     db.commit()
     sid = s.id
     db.close()
-    headers = {"Authorization": f"Bearer {token['token']}"}
+    long_lived = {"Authorization": f"Bearer {token['token']}"}
+    # the long-lived token only buys a short-lived access token; it cannot drive a session itself
+    r = client.post(f"/api/runner/sessions/{sid}/report", json={"state": "submitted"}, headers=long_lived)
+    assert r.status_code == 401
+    # a web page cannot act as the runner
+    r = client.post("/api/runner/connect", json={}, headers={**long_lived, "Origin": "https://evil.example"})
+    assert r.status_code == 403
+    access = client.post("/api/runner/connect", json={}, headers=long_lived).json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
     r = client.post(f"/api/runner/sessions/{sid}/report", json={"state": "submitted"}, headers=headers)
     assert r.status_code == 409 and r.json()["error"]["code"] == "submit_not_confirmed"
     assert auth_client.get(f"/api/applications/{a.id}").json()["status"] == "in_progress"
+    # instructions are signed with a key derived from the runner token, and a tampered payload is rejected
+    from app.automation.runner import Api, UntrustedInstructions
+
+    api = Api("", token["token"], http=client)
+    ins = api.instructions(sid)
+    assert ins["session_id"] == sid and ins["signature"]
+    with pytest.raises(UntrustedInstructions):
+        api._verified({**ins, "submit": True})
 
 
 def test_javascript_career_pages_are_rendered_in_a_sandbox(site):
