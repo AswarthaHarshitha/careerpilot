@@ -56,18 +56,49 @@ The checks are concrete pass/review/fail results, not a score, and none of them 
 **Live resume editor.** The resume is a structured document with stable element IDs, shown next to a live preview of the compiled PDF.
 
 - **Direct editing:** edit any bullet, field, link or section directly.
-- **Assistant:** ask for a change in plain language ("make the summary 2 lines", "remove the portfolio link"). It turns the request into targeted operations on the named or selected elements only, and never regenerates the whole resume. Broad changes are previewed first. Requests to add skills without evidence are refused.
+- **Resume agent:** describe changes in your own words, several at once ("make the summary longer, put Resolve first, add my GitHub but remove LinkedIn, and keep it to one page"). The agent works through each request in turn:
+  - It **understands** the request. Rules handle everyday requests without a model call; the model places the rest against an outline of the current document, and every step it proposes is checked against that outline.
+  - It **inspects the current state:** the selection, the last edited part (so "some more" and "it" work), the job's requirements, and your verified facts.
+  - It **plans** a safe order: structure, then wording, then page fitting.
+  - It **edits** only the targeted elements.
+  - It **verifies** the result: re-render, fit to the page target, and deterministic checks.
+  - It **reports** what changed, for example "Expanded the summary from 2 to 4 lines. Nothing else was changed."
+
+  Wording changes draw only on verified profile and repository facts and pass the truth check. A rejected rewrite is retried once with the reason. The agent asks one short question only when a request can't be placed. Very large changes are previewed first.
 - **History:** every change is a revision, with undo/redo (⌘Z / ⌘⇧Z) and restore.
 - **Provenance:** text you type yourself is tracked, and any new claim in it is flagged in the checks.
 - **Saving:** edits autosave, and a queue survives reloads and network failures. If the resume changed in another tab, a conflict dialog offers to keep the current version, use the newer one, or compare them.
 
-**Applications.** A job tracker with deadlines, a dashboard of today's actions, and an apply agent:
+**Application agent.** The CareerPilot Runner is a small program on your computer. It is installed once with `careerpilot-runner install` and starts with the computer. It connects to CareerPilot, and the web app always shows its real state: Ready, Working, Waiting for you, Blocked, or Offline.
 
-- The agent runs on your computer (`careerpilot-runner`) and fills Greenhouse, Lever, Ashby and standard HTML forms in a visible browser.
-- It leaves unrecognised questions to you.
-- It stops for you at CAPTCHAs and sign-ins.
-- It submits only after you confirm in the web app, by default by typing the company name.
-- Your employer-site passwords never reach CareerPilot.
+"Apply with CareerPilot" runs the full loop:
+
+- open the employer's page (retrying failed loads)
+- detect and map the form, then fill what your profile answers
+- upload the resume version for the job and verify that the form accepted it
+- continue page by page, recovering from stale elements, slow pages and pop-ups
+- pause for anything only you can do (a CAPTCHA, a sign-in, a judgment question)
+- continue when you click "Continue application"
+
+Each application has persisted phases and a live, timestamped activity timeline.
+
+Before submitting, a review shows the company, role, resume version, required-field completion, unresolved questions and whether the upload succeeded. The runner submits only after your explicit confirmation, records the click before making it so a restart can never submit twice, and marks the application submitted only when the employer's confirmation is detected. It also captures the application ID when the page shows one.
+
+Adapters cover Greenhouse, Lever, Ashby and SmartRecruiters. Workday, Taleo, Oracle, SuccessFactors and iCIMS work after you sign in. Other forms get a generic best effort. Answers carry provenance (your answer, career profile, this job, or an AI suggestion), and a recurring answer is saved only when you tick "Remember".
+
+**Command palette and tools.** ⌘K accepts plain language ("apply for this job", "what is stopping the application?", "show skill gaps", "undo last resume change") as well as job links. The agent resolves which job, application or resume you mean from the page you are on, then runs one registered tool. Every tool declares a permission:
+
+- **READ** and **WRITE** tools act on CareerPilot data.
+- **EXTERNAL** tools act through your runner.
+- **HIGH_IMPACT** tools (final submission) are never run by a command; they only take you to the confirmation screen.
+
+**Research and interview preparation.** Company research reads the company's own public pages. Each fact cites the page it came from, and conclusions are marked as inference. After you submit, an interview workspace is prepared from the job, your resume version and your verified projects: likely technical areas, project deep-dives with answer outlines, resume questions, role-specific and behavioral questions, and coding topics. All of it is labelled as suggested preparation.
+
+**Command center.** The dashboard shows:
+
+- counts for applications, ready to apply, in progress, interviews, follow-ups, resume versions and skill gaps
+- today's actions: apply, follow up, improve project evidence, prepare for interviews
+- career ideas, kept separate from job notes
 
 ## AI providers
 
@@ -145,7 +176,7 @@ AI is optional. Set `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `OLLAMA_BASE_URL` 
 
 ```bash
 make test        # backend (pytest) and frontend (Vitest) suites
-make e2e         # full pipeline end to end on a fresh database
+make e2e         # both end-to-end checks below
 make lint        # ruff and TypeScript checks
 ```
 
@@ -157,10 +188,25 @@ The backend suite covers:
 - LaTeX, DOCX, PDF and text templates, and template compilation.
 - The quality gate and instruction handling.
 - The editor: operations, assistant scope, undo/redo, history, concurrency conflicts and export of the latest state.
+- The resume agent (intent resolution, multi-step plans, follow-ups, truth checks, no substituted entries) and the command agent (tool choice, context, permissions).
+- Company research (citations, dropped uncited claims) and interview preparation.
+- Runner security: short-lived access tokens, signed task payloads, refusal of browser origins, and revocation.
 - Security: authentication, CSRF, IDOR, SSRF and prompt-injection boundaries.
 - Browser automation against a local mock application site.
 
-`make e2e` runs a mock job page through extraction, analysis, GitHub evidence, a tailored PDF and autofill. It then covers confirmation, submission and the recorded application.
+`make e2e-pipeline` runs a mock job page through extraction, analysis, GitHub evidence, a tailored PDF and autofill. It then covers confirmation, submission and the recorded application.
+
+`make e2e-agent` starts a real runner process against a local three-page application with injected faults: a failed first load, a rejected upload, re-rendered fields, an alert and a slow page. It checks each of these:
+
+- the connection shows as live
+- mapping, filling, and verified upload
+- the CAPTCHA pause
+- killing the runner (the app shows it offline), restarting it and resuming safely
+- continuing after the CAPTCHA
+- answering questions
+- explicit confirmation and submission
+- confirmation detection with the application ID
+- exactly one submission reaching the site
 
 ## Deployment
 

@@ -66,6 +66,18 @@ def set_status(db: Session, a: Application, status: str, note: str = "", *, veri
         return
     prev = a.status
     a.status = status
+    if status in ("submitted", "assessment", "interview", "rejected", "withdrawn", "offer"):
+        # the application has moved past applying: an open browser session must not continue (or ever submit)
+        for s in db.scalars(
+            select(AutomationSession).where(
+                AutomationSession.application_id == a.id, AutomationSession.state.notin_(AUTOMATION_TERMINAL)
+            )
+        ):
+            if s.state in ("submitting",):
+                continue  # the runner reports the outcome of a submission already in progress
+            s.state, s.phase = "cancelled", "CANCELLED"
+            s.message = f"Closed because the application was marked {STATUS_LABELS[status]}."
+            _log(s, s.message, s.phase)
     if status == "submitted":
         now = datetime.now(UTC)
         a.submitted_at = a.submitted_at or now

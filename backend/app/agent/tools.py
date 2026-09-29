@@ -167,6 +167,10 @@ def application_blockers(ctx: Ctx) -> Result:
     s = svc.latest_session(db, a.id)
     runner = svc.runner_status(db, ctx.user_id)
     reasons: list[str] = []
+    if a.status in ("withdrawn", "rejected", "offer", "interview", "assessment"):
+        return Result(
+            f"Nothing to apply for: the application to {_label(job)} is marked {svc.STATUS_LABELS[a.status]}.", href
+        )
     if a.status == "submitted":
         return Result(
             f"Nothing: the application to {_label(job)} was submitted"

@@ -103,7 +103,7 @@ export function AppShell() {
         </div>
         <div className="px-3 pb-3">
           <button onClick={() => setPalette(true)} className="flex h-9 w-full items-center gap-2 rounded-md border border-line-strong bg-surface px-3 text-[13px] text-muted shadow-card transition-colors hover:text-ink">
-            <Search className="size-3.5" /> Command or job link <span className="ml-auto"><Kbd>⌘K</Kbd></span>
+            <Search className="size-3.5" /> Ask or command <span className="ml-auto"><Kbd>⌘K</Kbd></span>
           </button>
         </div>
         <nav className="flex-1 space-y-0.5 px-3" aria-label="Main">

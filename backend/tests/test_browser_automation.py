@@ -260,3 +260,25 @@ def test_rendered_pages_cannot_reach_private_addresses(site):
     html, _ = render_page(site.base + "/careers/spa-job/77")
     assert "<title>LEAKED</title>" not in html  # the metadata request was aborted by the request guard
     assert "<title>Careers (mock SPA)</title>" in html
+
+
+def test_marking_an_application_done_closes_its_open_session(auth_client):
+    from app.core.db import session_factory
+    from app.models import Application, AutomationSession, Job, User
+
+    db = session_factory()()
+    user = db.query(User).first()
+    job = Job(user_id=user.id, company="X", role_title="Y", job_url="https://x.example/j", analysis_state="ready")
+    db.add(job)
+    db.flush()
+    a = Application(user_id=user.id, job_id=job.id, status="in_progress")
+    db.add(a)
+    db.flush()
+    db.add(AutomationSession(user_id=user.id, application_id=a.id, start_url=job.job_url, state="queued"))
+    db.commit()
+    app_id = a.id
+    db.close()
+    assert auth_client.get("/api/agent/status").json()["task"]["application_id"] == app_id
+    auth_client.patch(f"/api/applications/{app_id}", json={"status": "withdrawn"})
+    assert auth_client.get("/api/agent/status").json()["task"] is None
+    assert auth_client.get(f"/api/applications/{app_id}").json()["session"]["state"] == "cancelled"

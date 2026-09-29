@@ -99,15 +99,25 @@ Structural editor commands never use an AI provider: removing a link, moving a p
 
 PDF text is extracted locally with PyMuPDF. For scanned PDFs without a text layer, install [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation.html) (`brew install tesseract`), and CareerPilot will OCR those pages.
 
-### Apply agent
+### CareerPilot Runner (application agent)
 
-Form filling runs on your own computer so that you can sign in, solve CAPTCHAs and watch every step. In the app, create a runner token under **Settings → Browser automation**, then run:
+The runner fills applications in a browser on your computer, so you can sign in, solve CAPTCHAs and watch every step. In the app, create a token under **Settings → Browser automation**, then install it once:
 
 ```bash
 cd backend
 uv sync --extra automation && uv run playwright install chromium
-uv run careerpilot-runner --api https://your-app.example --token <token>
+uv run careerpilot-runner install --api https://your-app.example --token <token>
 ```
+
+This saves the connection details in `~/.careerpilot/runner.json` (readable only by you). It then registers the runner to start at login: with launchd on macOS, or systemd `--user` on Linux. Windows prints the scheduled-task command to use.
+
+- `careerpilot-runner status` checks the connection.
+- `careerpilot-runner start` restarts the runner.
+- `careerpilot-runner uninstall` removes the automatic start.
+
+For development, run it in a terminal with `uv run careerpilot-runner --api … --token …`.
+
+The token is exchanged for 15-minute access tokens, and every task is signed and verified before the runner acts on it. Revoking the token in Settings disconnects the runner immediately.
 
 ### Deployment credentials
 
