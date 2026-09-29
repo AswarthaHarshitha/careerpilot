@@ -713,6 +713,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="process one application and exit")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll would grow the log without bound
     cfg = load_config()
     api_url = args.api or cfg.get("api", "")
     token = args.token or cfg.get("token", "")
