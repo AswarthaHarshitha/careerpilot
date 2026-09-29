@@ -3,9 +3,10 @@ import { FileUp, Link2, ScrollText } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { Page } from '../components/AppShell'
+import { emptyInstructions, InstructionsEditor } from '../components/InstructionsEditor'
 import { Button, Card, ErrorState, Field, Input, PageHeader, Tabs, Textarea } from '../components/ui'
 import { api, post } from '../lib/api'
-import type { JobSummary } from '../lib/types'
+import type { JobSummary, ResumeInstructions } from '../lib/types'
 
 type Mode = 'url' | 'paste' | 'pdf' | 'id'
 
@@ -22,6 +23,10 @@ export default function NewJob() {
   const [careers, setCareers] = useState('')
   const [jobCode, setJobCode] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [instructions, setInstructions] = useState<ResumeInstructions>(emptyInstructions())
+  const [notes, setNotes] = useState('')
+  const [showInstr, setShowInstr] = useState(false)
+  const extra = { resume_instructions: instructions, notes }
 
   const m = useMutation({
     mutationFn: async () => {
@@ -31,11 +36,13 @@ export default function NewJob() {
         form.append('company', company)
         form.append('role_title', role)
         form.append('application_url', appUrl)
+        form.append('instructions', JSON.stringify(instructions))
+        form.append('notes', notes)
         return api<{ job: JobSummary; task_id: number }>('/api/jobs/pdf', { form })
       }
-      if (mode === 'paste') return post<{ job: JobSummary; task_id: number }>('/api/jobs', { description: text, company, role_title: role, application_url: appUrl, url: url || null })
-      if (mode === 'id') return post<{ job: JobSummary; task_id: number }>('/api/jobs', { url, careers_url: careers, job_code: jobCode })
-      return post<{ job: JobSummary; task_id: number }>('/api/jobs', { url })
+      if (mode === 'paste') return post<{ job: JobSummary; task_id: number }>('/api/jobs', { description: text, company, role_title: role, application_url: appUrl, url: url || null, ...extra })
+      if (mode === 'id') return post<{ job: JobSummary; task_id: number }>('/api/jobs', { url, careers_url: careers, job_code: jobCode, ...extra })
+      return post<{ job: JobSummary; task_id: number }>('/api/jobs', { url, ...extra })
     },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['jobs'] })
@@ -99,6 +106,16 @@ export default function NewJob() {
               </div>
             </>
           )}
+          <div className="rounded-lg border border-line">
+            <button type="button" onClick={() => setShowInstr(!showInstr)} className="flex w-full items-center justify-between px-4 py-2.5 text-left">
+              <span className="text-[13.5px] font-medium">Resume instructions <span className="font-normal text-muted">· optional</span></span>
+              <span className="text-[12px] text-muted">{showInstr ? 'Hide' : instructions.custom.length || Object.keys(instructions.controls).length ? 'Edit' : 'Add'}</span>
+            </button>
+            {showInstr && <div className="border-t border-line px-4 py-3"><InstructionsEditor value={instructions} onChange={setInstructions} /></div>}
+          </div>
+          <Field label="My notes & ideas (optional)" hint="Your own thoughts about this job. Kept separate from resume instructions.">
+            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Resolve is probably most relevant; they talk about support automation." />
+          </Field>
           {m.error && <ErrorState error={m.error} compact onRetry={() => m.mutate()} onAction={(a) => a === 'paste_description' && setMode('paste')} openUrl={url || undefined} />}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => nav(-1)}>Cancel</Button>

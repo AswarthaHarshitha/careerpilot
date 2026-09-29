@@ -81,7 +81,10 @@ export type JobDetail = JobSummary & {
   requirements: Requirement[]
   recommended_projects: RecommendedProject[]
   resumes: { id: number; label: string; version_number: number; status: string; created_at: string; page_count: number | null }[]
-  suggested_projects: { id: number; title: string; status: string }[]
+  suggested_projects: { id: number; title: string; status: string; auto_generated?: boolean }[]
+  resume_instructions: ResumeInstructions
+  notes: string
+  resume_config: ResumeConfig | null
 }
 
 export type Bullet = { text: string; original: string; origin: string; rejected?: string[] }
@@ -150,6 +153,10 @@ export type ResumeVersion = {
   changes?: { section: string; type: string; detail: string }[]
   ats_report?: AtsReport
   recruiter_report?: RecruiterReport
+  quality_report?: QualityReport
+  export_blocked?: boolean
+  quality_counts?: { pass?: number; review?: number; fail?: number }
+  config?: Record<string, unknown>
 }
 
 export type Template = {
@@ -164,6 +171,17 @@ export type Template = {
   is_default: boolean
   sections: { index: number; title: string; kind: string; layout: string; count: number }[]
   header: { name?: string; email?: string; phone?: string; links?: { url: string; text: string; kind: string }[] }
+  analysis_pending?: boolean
+  has_original_pdf?: boolean
+  template_lock?: boolean
+  fingerprint?: {
+    pages: number; page_size: string; layout: string; text: string; font: string; body_size: number
+    margins: Record<string, number>; section_order: string[]; heading_style: string; bullet: string | null
+  } | null
+  comparison?: {
+    pages_original: number; pages_rebuilt: number; headings_found: number; headings_total: number
+    max_heading_offset_pt: number | null; mean_heading_offset_pt: number | null; text_preserved: number
+  } | null
   structure?: {
     index: number
     title: string
@@ -213,6 +231,11 @@ export type Project = {
   topics: string[]
   evidence?: Evidence[]
   bullets?: { id: number; text: string; source: string }[]
+  asset_type: 'project' | 'personal_profile'
+  asset_type_locked: boolean
+  resume_eligible: boolean
+  status: 'idea' | 'planned' | 'building' | 'built' | 'verified' | 'deployed'
+  evidence_eligible: boolean
   languages?: { name: string; share: number }[]
   readme_excerpt?: string
   file_count?: number | null
@@ -225,8 +248,12 @@ export type Suggestion = {
   gap_skills: string[]
   gap_keys: string[]
   existing_skills: string[]
-  status: 'not_built' | 'in_progress' | 'verified'
+  status: 'idea' | 'planned' | 'building' | 'built' | 'verified' | 'deployed'
+  auto_generated?: boolean
+  verification: { skill: string; label: string; verified: boolean; source: string; gap: boolean }[]
   plan: {
+    why?: string
+    interview_points?: string[]
     title: string
     summary: string
     demonstrates: string[]
@@ -307,4 +334,105 @@ export type Application = {
   fields?: AppField[]
   session?: AutomationSession | null
   confirmation_text?: string
+}
+
+export type InstructionControls = {
+  portfolio?: 'default' | 'include' | 'exclude'
+  github?: 'default' | 'include' | 'exclude'
+  linkedin?: 'default' | 'include' | 'exclude'
+  length?: 'default' | 1 | 2
+  projects?: 'auto' | 2 | 3 | 4
+  summary?: 'auto' | 'include' | 'exclude'
+  certifications?: 'auto' | 'include' | 'exclude'
+  template_id?: number | null
+}
+export type ResumeInstructions = { controls: InstructionControls; custom: string[] }
+export type Conflict = { instruction: string; reason: string; options: string[] }
+export type ResumeConfig = {
+  template: string | null
+  template_id: number | null
+  length: number
+  projects: number
+  links: Record<'portfolio' | 'github' | 'linkedin', 'template' | 'include' | 'exclude'>
+  summary: string
+  certifications: string
+  custom_count: number
+  instructions: string[]
+  conflicts: Conflict[]
+  unrecognized: string[]
+  ambiguous: string[]
+  applied: string[]
+}
+export type QualityCheck = { id: string; label: string; status: 'pass' | 'review' | 'fail'; detail: string; items: string[] }
+export type QualityReport = {
+  checks: QualityCheck[]
+  blocked: boolean
+  counts: { pass: number; review: number; fail: number }
+  length_conflict: { pages: number; target: number; options: { id: string; label: string }[] } | null
+  config_summary: string[]
+  generic_rewritten?: number
+}
+export type Element = {
+  type: 'header_name' | 'link' | 'section_title' | 'paragraph' | 'entry' | 'field' | 'bullet' | 'item' | 'skills'
+  text?: string
+  kind?: string
+  mode?: string
+  section?: string
+  entry?: string
+  role?: string
+  origin?: string
+  tech_line?: boolean
+}
+export type EditorState = {
+  id: number
+  revision: number
+  head: number
+  can_undo: boolean
+  can_redo: boolean
+  content: EditorContent
+  elements: Record<string, Element>
+  page_count: number | null
+  page_target: number
+  status: 'draft' | 'approved'
+  export_blocked: boolean
+  quality_report: QualityReport
+  render_error: string
+  label: string
+  template: string | null
+  job: { id: number; company: string; role_title: string } | null
+  profile_links: Record<string, string>
+  unverified_user_claims: string[]
+  history: { number: number; label: string; source: string; changed: string[]; page_count: number | null; created_at: string; current: boolean }[]
+  changed?: string[]
+}
+export type EditorBullet = { id: string; text: string; origin: string; tech_line?: boolean; rejected?: string[] }
+export type EditorEntry = {
+  id: string
+  fields: Record<string, string>
+  bullets: EditorBullet[] | null
+  matched?: string[]
+  ref?: { type: string; id: number } | null
+}
+export type EditorSection = {
+  id: string
+  index: number
+  title: string
+  title_text?: string
+  title_id: string
+  kind: string
+  layout: string
+  removed?: boolean
+  unchanged?: boolean
+  text?: string
+  text_id?: string
+  entries?: EditorEntry[]
+  removed_entries?: EditorEntry[]
+  categories?: { id: string; name: string; items: string[] }[]
+  items?: string[]
+  item_ids?: string[]
+}
+export type EditorContent = {
+  header: { name: string; links: { id: string; kind: string; url: string; mode: string; in_template?: boolean }[] }
+  sections: EditorSection[]
+  page_target?: number
 }

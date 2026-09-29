@@ -21,6 +21,10 @@ export default function Templates() {
     onSuccess: (r) => { setSelected(r.template.id); setTaskId(r.task_id); qc.invalidateQueries({ queryKey: ['templates'] }) },
   })
   const task = useTask(taskId, [['templates'], ['template', String(selected)], ['resumes']])
+  const fromProfile = useMutation({
+    mutationFn: () => post<{ template: Template; task_id: number }>('/api/templates/from-profile'),
+    onSuccess: (r) => { setSelected(r.template.id); setTaskId(r.task_id); qc.invalidateQueries({ queryKey: ['templates'] }) },
+  })
   const current = q.data?.find((t) => t.id === selected) ?? q.data?.[0]
 
   return (
@@ -28,15 +32,17 @@ export default function Templates() {
       <PageHeader eyebrow={<Link to="/resumes" className="hover:text-ink">Resumes</Link>} title="Resume templates"
         subtitle="CareerPilot edits the content inside your template and keeps its layout, fonts, spacing and section order."
         actions={<>
-          <input ref={fileRef} type="file" accept=".tex,.docx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = '' }} />
+          <input ref={fileRef} type="file" accept=".tex,.zip,.docx,.pdf,.txt,.md,.markdown" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = '' }} />
+          <Button icon={<UserRoundPlus className="size-4" />} loading={fromProfile.isPending} onClick={() => fromProfile.mutate()}>Create from my profile</Button>
           <Button variant="primary" icon={<Upload className="size-4" />} loading={upload.isPending} onClick={() => fileRef.current?.click()}>Upload template</Button>
         </>} />
       {upload.error && <div className="mb-4"><ErrorState error={upload.error} /></div>}
+      {fromProfile.error && <div className="mb-4"><ErrorState error={fromProfile.error} /></div>}
       {task && task.status !== 'succeeded' && <Card className="mb-4 p-4"><TaskProgress steps={task.steps} status={task.status} error={task.error} /></Card>}
       {q.isLoading ? <LoadingRows /> : q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !q.data?.length ? (
         <EmptyState icon={<Upload className="size-7" />} title="Upload your resume source"
-          action={<Button variant="primary" onClick={() => fileRef.current?.click()}>Choose .tex or .docx</Button>}>
-          LaTeX (.tex) gives the most exact results. If your resume is on Overleaf, use Menu → Download → Source and upload the main .tex file. PDFs can't be edited, so they can't be used as templates.
+          action={<Button variant="primary" onClick={() => fileRef.current?.click()}>Choose a file</Button>}>
+          Supported: PDF · DOCX · LaTeX (.tex or a zipped Overleaf project) · TXT/Markdown. LaTeX gives the most exact results: on Overleaf use Menu → Download → Source. A PDF is analysed and rebuilt as an editable template that keeps its layout.
         </EmptyState>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -48,7 +54,7 @@ export default function Templates() {
                   <span className="truncate text-[13.5px] font-semibold">{t.name}</span>
                   {t.is_default && <Badge tone="accent"><Star className="size-3" />Default</Badge>}
                 </div>
-                <div className="mt-1 text-[12px] text-muted">{t.format === 'latex' ? 'LaTeX' : 'Word'} · {t.sections.length} sections · {t.page_count ? `${t.page_count} page${t.page_count > 1 ? 's' : ''}` : 'compiling…'} · {fmtDate(t.created_at)}</div>
+                <div className="mt-1 text-[12px] text-muted">{({ latex: 'LaTeX', docx: 'Word', pdf: 'PDF', text: 'Text' } as Record<string, string>)[t.format] ?? t.format} · {t.sections.length} sections · {t.page_count ? `${t.page_count} page${t.page_count > 1 ? 's' : ''}` : 'compiling…'} · {fmtDate(t.created_at)}</div>
                 {t.render_error && <div className="mt-1.5 text-[12px] text-missing">Preview failed</div>}
               </button>
             ))}
@@ -83,9 +89,35 @@ function TemplateDetail({ id }: { id: number }) {
   if (t.isLoading) return <LoadingRows />
   if (t.error) return <ErrorState error={t.error} onRetry={() => t.refetch()} />
   const d = t.data!
+  if (d.analysis_pending && !d.render_error) {
+    return <Card className="p-6 text-[13px] text-muted">Analysing the PDF and rebuilding it as an editable template…</Card>
+  }
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="space-y-4">
+        {d.fingerprint && (
+          <Card>
+            <CardHeader title="Template successfully analysed" subtitle={`Template lock: ON — content changes, the layout does not`} />
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 px-4 py-3 text-[12.5px]">
+              {([['Pages', String(d.fingerprint.pages)], ['Layout', d.fingerprint.layout], ['Text', d.fingerprint.text],
+                ['Font', d.fingerprint.font || '—'], ['Body size', `${d.fingerprint.body_size}pt`], ['Headings', d.fingerprint.heading_style || 'plain'],
+                ['Margins', `${d.fingerprint.margins.left}pt / ${d.fingerprint.margins.right}pt`], ['Sections', String(d.fingerprint.section_order.length)]] as const).map(([k, v]) => (
+                <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="text-ink-2">{v}</dd></div>
+              ))}
+            </dl>
+            {d.comparison && (
+              <div className="border-t border-line px-4 py-3 text-[12.5px]">
+                <div className="mb-1 font-medium">How closely the rebuilt template matches</div>
+                <ul className="space-y-0.5 text-ink-2">
+                  <li>Pages: {d.comparison.pages_rebuilt} (original {d.comparison.pages_original})</li>
+                  <li>Section headings found: {d.comparison.headings_found} of {d.comparison.headings_total}</li>
+                  <li>Heading positions: within {d.comparison.mean_heading_offset_pt}pt on average (largest {d.comparison.max_heading_offset_pt}pt)</li>
+                  <li>Text preserved: {d.comparison.text_preserved}%</li>
+                </ul>
+              </div>
+            )}
+          </Card>
+        )}
         <Card>
           <CardHeader title="Parsed structure" subtitle={`${d.header.name || 'Header'}${d.header.email ? ' · ' + d.header.email : ''}`}
             actions={<>
@@ -125,9 +157,13 @@ function TemplateDetail({ id }: { id: number }) {
           </div>
         </Card>
       </div>
-      <div>
-        {d.render_error ? <ErrorState error={new Error(d.render_error)} /> :
-          <PdfPreview url={`/api/templates/${id}/preview.pdf`} available={d.has_preview} height="h-[760px]" />}
+      <div className="space-y-3">
+        {d.render_error ? <ErrorState error={new Error(d.render_error)} /> : d.has_original_pdf ? (
+          <div className="grid gap-3 2xl:grid-cols-2">
+            <div><div className="mb-1 text-[12px] font-medium text-muted">Your uploaded PDF</div><PdfPreview url={`/api/templates/${id}/original.pdf`} height="h-[700px]" /></div>
+            <div><div className="mb-1 text-[12px] font-medium text-muted">Rebuilt template (used for tailored resumes)</div><PdfPreview url={`/api/templates/${id}/preview.pdf`} available={d.has_preview} height="h-[700px]" /></div>
+          </div>
+        ) : <PdfPreview url={`/api/templates/${id}/preview.pdf`} available={d.has_preview} height="h-[760px]" />}
       </div>
     </div>
   )

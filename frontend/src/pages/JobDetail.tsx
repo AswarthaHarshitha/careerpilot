@@ -1,18 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Archive, ChevronDown, ExternalLink, FileText, Hammer, Pencil, RefreshCw, Send, Sparkles,
+  Archive, Check, ChevronDown, ExternalLink, FileText, Hammer, Pencil, RefreshCw, Send, Sparkles,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { InstructionsEditor } from '../components/InstructionsEditor'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Page } from '../components/AppShell'
 import {
   Badge, Button, Card, CardHeader, Dialog, ErrorState, EvidenceBadge, Field, Input, LoadingRows, MatchBadge, Select,
-  StatusBadge, TaskProgress, cx, errorText, useToast,
+  StatusBadge, TaskProgress, Textarea, cx, errorText, useToast,
 } from '../components/ui'
 import { ApiError, del, get, patch, post, put } from '../lib/api'
 import { daysLabel, fmtDate, STATUS_LABEL, STATUS_ORDER } from '../lib/format'
-import type { AppStatus, JobDetail as Job, Requirement, Suggestion, Template } from '../lib/types'
+import type { AppStatus, JobDetail as Job, Requirement, ResumeInstructions, Suggestion, Template } from '../lib/types'
 import { useTask } from '../lib/useTask'
 
 export default function JobDetail() {
@@ -202,6 +203,8 @@ function Analysis({ j }: { j: Job }) {
       </div>
       <div className="space-y-6">
         <ResumePanel j={j} />
+        <InstructionsCard j={j} />
+        <NotesCard j={j} />
         <ProjectsPanel j={j} />
         <GapsPanel j={j} missing={missing} />
         {j.responsibilities.length > 0 && (
@@ -271,6 +274,7 @@ function ResumePanel({ j }: { j: Job }) {
   })
   const task = useTask(taskId, [['job', String(j.id)], ['resumes'], ['dashboard']], (t) => {
     if (t.status === 'succeeded' && t.result.resume_version_id) nav(`/resumes/${t.result.resume_version_id}`)
+    if (t.status === 'succeeded') qc.invalidateQueries({ queryKey: ['job', String(j.id)] })
   })
   const running = !!task && (task.status === 'queued' || task.status === 'running')
   const hasTemplate = (templates.data?.length ?? 0) > 0
@@ -284,6 +288,7 @@ function ResumePanel({ j }: { j: Job }) {
             <span className="flex items-center gap-2 text-[12px] text-muted">{v.page_count ? `${v.page_count}p` : ''}<Badge tone={v.status === 'approved' ? 'strong' : 'neutral'}>{v.status === 'approved' ? 'Approved' : 'Draft'}</Badge></span>
           </Link>
         ))}
+        {!running && hasTemplate && j.resume_config && <ConfigPreview cfg={j.resume_config} />}
         {running ? (
           <div className="rounded-md border border-line bg-surface-2/40 p-3"><TaskProgress steps={task!.steps} status={task!.status} /></div>
         ) : !hasTemplate && !templates.isLoading ? (
@@ -372,9 +377,16 @@ function GapsPanel({ j, missing }: { j: Job; missing: Requirement[] }) {
     onSuccess: (s) => nav(`/suggestions/${s.id}`),
   })
   if (!missing.length && !j.suggested_projects.length) return null
+  const autoPlan = j.suggested_projects.find((s) => s.auto_generated)
   return (
     <Card>
       <CardHeader title="Gaps" subtitle="Requirements with no evidence. These are not added to your resume." />
+      {autoPlan && (
+        <Link to={`/suggestions/${autoPlan.id}`} className="mx-4 mt-3 block rounded-md border border-accent/25 bg-accent-soft/50 px-3 py-2 text-[12.5px]">
+          <div className="font-medium text-ink">Your projects don't cover these. A supporting project plan is ready.</div>
+          <div className="text-ink-2">{autoPlan.title} · <span className="text-muted">Idea — not built, never shown on a resume</span></div>
+        </Link>
+      )}
       <div className="space-y-2 px-4 py-3">
         {missing.map((r) => (
           <label key={r.id} className="flex items-center gap-2.5 text-[13px]">
@@ -393,7 +405,10 @@ function GapsPanel({ j, missing }: { j: Job; missing: Requirement[] }) {
         {j.suggested_projects.map((s) => (
           <Link key={s.id} to={`/suggestions/${s.id}`} className="flex items-center justify-between rounded-md border border-line px-3 py-2 text-[12.5px] hover:bg-surface-2/40">
             <span className="truncate">{s.title}</span>
-            <Badge tone={s.status === 'verified' ? 'strong' : 'partial'}>{s.status === 'verified' ? 'Verified' : 'Not yet built'}</Badge>
+            <span className="flex items-center gap-1.5">
+              {s.auto_generated && <Badge>Suggested for this job</Badge>}
+              <Badge tone={s.status === 'verified' || s.status === 'deployed' ? 'strong' : 'partial'}>{SUGGESTION_STATUS[s.status] ?? s.status}</Badge>
+            </span>
           </Link>
         ))}
       </div>
@@ -401,3 +416,78 @@ function GapsPanel({ j, missing }: { j: Job; missing: Requirement[] }) {
   )
 }
 
+
+
+export const SUGGESTION_STATUS: Record<string, string> = {
+  idea: 'Idea', planned: 'Planned', building: 'Building', built: 'Built — not yet verified', verified: 'Verified', deployed: 'Deployed',
+}
+
+function ConfigPreview({ cfg }: { cfg: NonNullable<Job['resume_config']> }) {
+  const link = (v: string) => (v === 'include' ? 'Included' : v === 'exclude' ? 'Excluded' : 'As in template')
+  const rows: [string, string][] = [
+    ['Template', cfg.template ?? '—'], ['Length', `${cfg.length} page${cfg.length > 1 ? 's' : ''}`], ['Projects', String(cfg.projects)],
+    ['Portfolio', link(cfg.links.portfolio)], ['GitHub', link(cfg.links.github)], ['LinkedIn', link(cfg.links.linkedin)],
+    ['Summary', cfg.summary === 'exclude' ? 'Excluded' : cfg.summary === 'include' ? 'Included' : 'Auto'],
+    ['Certifications', cfg.certifications === 'exclude' ? 'Excluded' : cfg.certifications === 'include' ? 'Included' : 'Auto'],
+  ]
+  return (
+    <div className="rounded-md border border-line bg-surface-2/40 p-3 text-[12.5px]">
+      <div className="mb-1.5 font-medium text-ink">Resume configuration</div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+        {rows.map(([k, v]) => <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="text-ink-2">{v}</dd></div>)}
+      </dl>
+      {cfg.instructions.length > 0 && (
+        <div className="mt-2 border-t border-line pt-2">
+          <div className="mb-0.5 font-medium text-ink">Your instructions</div>
+          <ul>{cfg.instructions.map((x) => <li key={x} className="flex items-center gap-1.5 text-ink-2"><Check className="size-3 text-strong" />{x}</li>)}</ul>
+          <div className="mt-1 text-[11.5px] text-muted">These affect this resume only.</div>
+        </div>
+      )}
+      {cfg.conflicts.length > 0 && (
+        <div className="mt-2 rounded border border-missing/25 bg-missing-soft/50 p-2 text-ink-2">
+          {cfg.conflicts.length} instruction{cfg.conflicts.length > 1 ? 's' : ''} not applied (conflicts with your verified evidence).
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InstructionsCard({ j }: { j: Job }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState<ResumeInstructions>(j.resume_instructions ?? { controls: {}, custom: [] })
+  const qc = useQueryClient()
+  const toast = useToast()
+  const save = useMutation({
+    mutationFn: () => patch(`/api/jobs/${j.id}`, { resume_instructions: value }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['job', String(j.id)] }); setEditing(false); toast('Instructions saved for this job') },
+    onError: (e) => toast(errorText(e), 'error'),
+  })
+  const lines = j.resume_config?.instructions ?? []
+  return (
+    <Card>
+      <CardHeader title="Resume instructions" subtitle="Optional. Apply to this job only."
+        actions={editing ? <Button size="sm" variant="primary" loading={save.isPending} onClick={() => save.mutate()}>Save</Button>
+          : <Button size="sm" variant="ghost" onClick={() => { setValue(j.resume_instructions ?? { controls: {}, custom: [] }); setEditing(true) }}>{lines.length ? 'Edit' : 'Add'}</Button>} />
+      <div className="px-4 py-3">
+        {editing ? <InstructionsEditor value={value} onChange={setValue} compact /> : lines.length ? (
+          <ul className="space-y-0.5 text-[13px]">{lines.map((x) => <li key={x} className="flex items-center gap-1.5"><Check className="size-3.5 text-strong" />{x}</li>)}</ul>
+        ) : <p className="text-[12.5px] text-muted">None. The resume uses your defaults.</p>}
+      </div>
+    </Card>
+  )
+}
+
+function NotesCard({ j }: { j: Job }) {
+  const [notes, setNotes] = useState(j.notes ?? '')
+  const qc = useQueryClient()
+  const save = useMutation({ mutationFn: () => patch(`/api/jobs/${j.id}`, { notes }), onSuccess: () => qc.invalidateQueries({ queryKey: ['job', String(j.id)] }) })
+  return (
+    <Card>
+      <CardHeader title="My notes & ideas" subtitle={save.isPending ? 'Saving…' : notes !== (j.notes ?? '') ? 'Unsaved' : undefined} />
+      <div className="p-3">
+        <Textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== (j.notes ?? '') && save.mutate()}
+          placeholder="Anything you want to remember about this job." />
+      </div>
+    </Card>
+  )
+}

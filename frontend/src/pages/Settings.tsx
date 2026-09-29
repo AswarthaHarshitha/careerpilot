@@ -15,6 +15,7 @@ type S = {
   default_template_id: number | null; resume_max_pages: number; max_projects: number; max_bullets_per_project: number
   timezone: string; submit_confirmation_mode: 'type_company' | 'click'; deadline_reminder_days: number
   follow_up_after_days: number; notify_in_app: boolean
+  header_portfolio: 'template' | 'include' | 'exclude'; header_github: 'template' | 'include' | 'exclude'; header_linkedin: 'template' | 'include' | 'exclude' 
   ai: { provider: string; model: string; base_url: string; api_key: string; server_provider: string; server_model: string }
   github: { username: string; token: string; include_private_repos: boolean; include_forks: boolean; last_scan_at: string | null; server_token: boolean }
 }
@@ -64,7 +65,7 @@ function Preferences({ s, tab }: { s: S; tab: TabKey }) {
   const save = useSettingsSave<Partial<S>>('/api/settings/preferences')
   const setDefault = useMutation({ mutationFn: (id: number) => post(`/api/templates/${id}/default`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['templates'] }) } })
   const num = (k: keyof S) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: Number(e.target.value) })
-  const body = { resume_max_pages: f.resume_max_pages, max_projects: f.max_projects, max_bullets_per_project: f.max_bullets_per_project, timezone: f.timezone, submit_confirmation_mode: f.submit_confirmation_mode, deadline_reminder_days: f.deadline_reminder_days, follow_up_after_days: f.follow_up_after_days, notify_in_app: f.notify_in_app }
+  const body = { resume_max_pages: f.resume_max_pages, max_projects: f.max_projects, max_bullets_per_project: f.max_bullets_per_project, timezone: f.timezone, submit_confirmation_mode: f.submit_confirmation_mode, deadline_reminder_days: f.deadline_reminder_days, follow_up_after_days: f.follow_up_after_days, notify_in_app: f.notify_in_app, header_portfolio: f.header_portfolio, header_github: f.header_github, header_linkedin: f.header_linkedin }
   return (
     <Card>
       <CardHeader title={tab === 'resume' ? 'Resume defaults' : tab === 'applications' ? 'Application preferences' : 'Notifications'} />
@@ -80,6 +81,14 @@ function Preferences({ s, tab }: { s: S; tab: TabKey }) {
             <Field label="Resume length target (pages)" hint="Least relevant content is trimmed to fit."><Input type="number" min={1} max={3} value={f.resume_max_pages} onChange={num('resume_max_pages')} /></Field>
             <Field label="Projects per resume"><Input type="number" min={1} max={6} value={f.max_projects} onChange={num('max_projects')} /></Field>
             <Field label="Bullets per project"><Input type="number" min={1} max={6} value={f.max_bullets_per_project} onChange={num('max_bullets_per_project')} /></Field>
+            {(['header_portfolio', 'header_github', 'header_linkedin'] as const).map((k) => (
+              <Field key={k} label={`${k === 'header_portfolio' ? 'Portfolio' : k === 'header_github' ? 'GitHub' : 'LinkedIn'} link in header (default)`}
+                hint={k === 'header_portfolio' ? 'The portfolio is only ever a header link, never a project. A job’s instructions can override this.' : undefined}>
+                <Select value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value as S['header_github'] })}>
+                  <option value="template">As in my template</option><option value="include">Always include</option><option value="exclude">Leave out</option>
+                </Select>
+              </Field>
+            ))}
           </div>
         )}
         {tab === 'applications' && (

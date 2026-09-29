@@ -41,7 +41,32 @@ export default function ProjectDetail() {
           {p.homepage_url && <a href={p.homepage_url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 hover:text-ink"><Globe className="size-3.5" />Live</a>}
           {p.last_scanned_at && <span>Scanned {relative(p.last_scanned_at)}</span>}
         </span>}
-        actions={<Button icon={<EyeOff className="size-3.5" />} onClick={() => update.mutate({ hidden: !p.hidden })}>{p.hidden ? 'Unhide' : 'Hide from matching'}</Button>} />
+        actions={<Button icon={<EyeOff className="size-3.5" />} onClick={() => update.mutate({ hidden: !p.hidden })}>{p.hidden ? 'Unhide' : 'Hide from library'}</Button>} />
+      <Card className="mb-6 p-4">
+        {p.asset_type === 'personal_profile' ? (
+          <div className="text-[13px]">
+            <div className="flex items-center gap-2 font-medium"><Badge tone="verify">Personal profile</Badge>Header link only</div>
+            <p className="mt-1 text-ink-2">This is your portfolio/profile. It can appear only as a link in your resume header — never in Projects, never as evidence for a job requirement, and never counted in matching.</p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[13px]">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" className="accent-[var(--accent)]" checked={!p.resume_eligible} onChange={(e) => update.mutate({ resume_eligible: !e.target.checked })} />
+              Exclude from resume intelligence
+            </label>
+            <label className="flex items-center gap-2">Status
+              <Select value={p.status} onChange={(e) => update.mutate({ status: e.target.value as Project['status'] })} className="h-8 w-auto text-[12.5px]">
+                {['idea', 'planned', 'building', 'built', 'verified', 'deployed'].map((x) => <option key={x} value={x}>{x[0].toUpperCase() + x.slice(1)}</option>)}
+              </Select>
+            </label>
+            <button type="button" className="text-[12.5px] text-muted underline-offset-2 hover:text-ink hover:underline"
+              onClick={() => { if (confirm('Mark this repository as your portfolio/profile? It will never be used as a project.')) update.mutate({ asset_type: 'personal_profile' }) }}>
+              This is my portfolio/profile
+            </button>
+            <span className="text-[12px] text-muted">{p.evidence_eligible ? 'Used as evidence for matching and resumes.' : 'Not used as evidence (only Built, Verified or Deployed projects are).'}</span>
+          </div>
+        )}
+      </Card>
       {p.scan_error && <div className="mb-4 rounded-md border border-partial/30 bg-partial-soft px-3 py-2 text-[12.5px]">{p.scan_error}</div>}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">

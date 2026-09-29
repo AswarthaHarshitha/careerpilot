@@ -12,6 +12,7 @@ import { get, post } from '../lib/api'
 import { relative } from '../lib/format'
 import type { Project, Suggestion } from '../lib/types'
 import { useTask } from '../lib/useTask'
+import { SUGGESTION_STATUS } from './JobDetail'
 
 export default function Projects() {
   const [tab, setTab] = useState<'library' | 'suggested'>('library')
@@ -83,6 +84,13 @@ export default function Projects() {
                       </div>
                       {p.pushed_at && <span className="shrink-0 text-[11.5px] text-faint">{relative(p.pushed_at)}</span>}
                     </div>
+                    {p.asset_type === 'personal_profile' ? (
+                      <div className="mt-2"><Badge tone="verify">Personal profile · header link only, never a project</Badge></div>
+                    ) : !p.resume_eligible ? (
+                      <div className="mt-2"><Badge>Excluded from resume intelligence</Badge></div>
+                    ) : !p.evidence_eligible ? (
+                      <div className="mt-2"><Badge tone="partial">{p.status} · not used as evidence yet</Badge></div>
+                    ) : null}
                     <p className="mt-2 line-clamp-2 text-[12.5px] text-ink-2">{p.description || <span className="text-faint">No description</span>}</p>
                     <div className="mt-3 flex flex-wrap gap-1">{p.technologies.slice(0, 8).map((t) => <Badge key={t}>{t}</Badge>)}</div>
                     <div className="mt-auto flex items-center gap-3 pt-3 text-[11.5px] text-muted">
@@ -107,7 +115,7 @@ export default function Projects() {
               <Link key={s.id} to={`/suggestions/${s.id}`} className="rounded-lg border border-line bg-surface p-4 shadow-card hover:border-line-strong">
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-[14px] font-semibold">{s.title}</span>
-                  <Badge tone={s.status === 'verified' ? 'strong' : 'partial'}>{s.status === 'verified' ? 'Verified' : s.status === 'in_progress' ? 'In progress · not verified' : 'Not yet built'}</Badge>
+                  <Badge tone={s.status === 'verified' || s.status === 'deployed' ? 'strong' : 'partial'}>{SUGGESTION_STATUS[s.status]}{['idea', 'planned', 'building'].includes(s.status) ? ' · not built' : ''}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">{s.gap_skills.map((g) => <Badge key={g} tone="missing">{g}</Badge>)}</div>
               </Link>
