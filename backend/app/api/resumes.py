@@ -266,6 +266,7 @@ def editor_state(vid: int, user: User = Depends(current_user), db: Session = Dep
 @router.post("/resumes/{vid}/ops")
 def editor_ops(vid: int, body: OpsIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     from app.services import editor
+    from app.services.resume_agent import remember_manual
 
     v, changed = editor.apply(
         db,
@@ -275,6 +276,8 @@ def editor_ops(vid: int, body: OpsIn, user: User = Depends(current_user), db: Se
         label=body.label,
         base_revision=body.base_revision,
     )
+    remember_manual(v, changed)
+    db.commit()
     return {**editor.payload(db, v), "changed": changed}
 
 
@@ -301,13 +304,12 @@ def editor_restore(vid: int, body: RestoreIn, user: User = Depends(current_user)
 
 @router.post("/resumes/{vid}/assistant")
 def editor_assistant(vid: int, body: AssistantIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Plans a change from a natural-language request. Small, clear changes are applied at once; broad ones come
-    back as a preview and are applied only when the user confirms (apply=true with the previewed ops)."""
+    """The resume agent: understands the request against the current document, applies targeted edits, verifies
+    the result and reports what changed. Very large changes come back as a preview; the confirmed plan is sent
+    back as `ops` and applied exactly as shown."""
     from app.llm.provider import get_provider
-    from app.llm.router import describe
     from app.models import UserSettings
-    from app.resume import assistant
-    from app.services import editor
+    from app.services import editor, resume_agent
 
     v = svc.get_version(db, user.id, vid)
     editor.ensure_history(db, v)
@@ -315,27 +317,9 @@ def editor_assistant(vid: int, body: AssistantIn, user: User = Depends(current_u
         v, changed = editor.apply(
             db, v, body.ops, source="assistant", label=body.instruction[:200], base_revision=body.base_revision
         )
-        return {"applied": True, "state": editor.payload(db, v), "changed": changed}
-    job = db.get(Job, v.job_id) if v.job_id else None
-    focus = list(dict.fromkeys(r.label for r in job.requirements if r.kind == "skill")) if job else []
+        return {"applied": True, "state": editor.payload(db, v), "changed": changed, "report": "Applied.", "steps": []}
     provider = get_provider(db.get(UserSettings, user.id))
-    plan = assistant.plan(v.content, body.instruction, body.selection, provider, focus)
-    result = {
-        "ai": describe(provider) if provider is not None and (provider.used or provider.notices) else "",
-        "summary": plan.summary,
-        "message": plan.message,
-        "refused": plan.refused,
-        "ops": plan.ops,
-        "broad": plan.broad,
-    }
-    if not plan.ops:
-        return {"applied": False, **result}
-    if plan.broad and not body.apply:
-        return {"applied": False, "preview": assistant.preview(v.content, plan.ops), **result}
-    v, changed = editor.apply(
-        db, v, plan.ops, source="assistant", label=body.instruction[:200], base_revision=body.base_revision
-    )
-    return {"applied": True, "state": editor.payload(db, v), "changed": changed, **result}
+    return resume_agent.run(db, v, body.instruction, body.selection, provider, body.base_revision, confirm=body.apply)
 
 
 @router.get("/resumes/{vid}/preview/{page}.png")

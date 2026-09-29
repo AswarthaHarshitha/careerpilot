@@ -569,19 +569,20 @@ function LivePdf({ vid, revision, pages, saving }: { vid: number; revision: numb
 
 // --- assistant -----------------------------------------------------------------------------------
 
+type AgentStep = { label: string; status: 'done' | 'skipped'; detail?: string; op?: string }
 type AssistantResult = {
-  applied: boolean; summary: string[]; message: string; refused: string[]; ops: Op[]; broad: boolean; ai?: string
+  applied: boolean; steps: AgentStep[]; report: string; question?: string; options?: string[]
+  ops?: Op[]; broad?: boolean; ai?: string
   preview?: { id: string; before: string; after: string }[]; state?: EditorState; changed?: string[]
 }
-
-const SUGGESTIONS = ['Make the summary 2 lines', 'Put Resolve first', 'Remove the portfolio link', 'Make the projects section more concise', 'Make the resume exactly one page']
+type Exchange = AssistantResult & { instruction: string; id: number }
 
 function AssistantPanel({ vid, state, selection, clearSelection, flush, onApplied }: {
   vid: number; state: EditorState; selection: string[]; clearSelection: () => void; flush: () => Promise<boolean>
   onApplied: (s: EditorState, changed?: string[]) => void
 }) {
   const [text, setText] = useState('')
-  const [result, setResult] = useState<(AssistantResult & { instruction: string }) | null>(null)
+  const [log, setLog] = useState<Exchange[]>([])
   const toast = useToast()
   const selected = selection[0] ? state.elements[selection[0]] : null
   const run = useMutation({
@@ -590,67 +591,86 @@ function AssistantPanel({ vid, state, selection, clearSelection, flush, onApplie
       return post<AssistantResult>(`/api/resumes/${vid}/assistant`, { instruction, selection, base_revision: state.revision })
     },
     onSuccess: (r, instruction) => {
-      setResult({ ...r, instruction })
+      setLog((l) => [{ ...r, instruction, id: Date.now() }, ...l].slice(0, 12))
       if (r.applied && r.state) { onApplied(r.state, r.changed); setText('') }
     },
     onError: (e) => toast(errorText(e), 'error'),
   })
   const confirm = useMutation({
-    mutationFn: () => post<AssistantResult>(`/api/resumes/${vid}/assistant`, { instruction: result!.instruction, ops: result!.ops, base_revision: state.revision }),
-    onSuccess: (r) => { if (r.state) onApplied(r.state, r.changed); setResult({ ...result!, applied: true, preview: undefined }); setText('') },
+    mutationFn: (x: Exchange) => post<AssistantResult>(`/api/resumes/${vid}/assistant`, { instruction: x.instruction, ops: x.ops, base_revision: state.revision }),
+    onSuccess: (r, x) => {
+      if (r.state) onApplied(r.state, r.changed)
+      setLog((l) => l.map((e) => e.id === x.id ? { ...e, applied: true, preview: undefined, report: 'Applied the reviewed changes.' } : e))
+      setText('')
+    },
     onError: (e) => toast(errorText(e), 'error'),
   })
+  const send = (t: string) => { if (t.trim() && !run.isPending) run.mutate(t.trim()) }
   return (
     <div className="space-y-3 p-4">
-      <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) run.mutate(text.trim()) }}>
+      <form onSubmit={(e) => { e.preventDefault(); send(text) }}>
         <div className="mb-1.5 flex items-center justify-between text-[11.5px] text-muted">
-          <span>{selected ? <>Scope: <span className="text-ink">selected {selected.type === 'paragraph' ? 'summary' : selected.type}</span></> : 'Scope: decided from your request'}</span>
+          <span>{selected ? <>Working on: <span className="text-ink">the selected {selected.type === 'paragraph' ? 'summary' : selected.type}</span></> : 'Working on: whatever your request names'}</span>
           {selected && <button type="button" onClick={clearSelection} className="underline">Clear</button>}
         </div>
-        <Textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell the editor what to change…"
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (text.trim()) run.mutate(text.trim()) } }} />
+        <Textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} aria-label="Instruction for the resume editor"
+          placeholder="Describe the change in your own words. Several changes at once are fine."
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(text) } }} />
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-[11px] text-faint">Changes only what you ask. Your own edits are kept.</span>
+          <span className="text-[11px] text-faint">Edits only what you ask, then re-checks the resume.</span>
           <Button type="submit" size="sm" variant="primary" loading={run.isPending} disabled={!text.trim()}>Make change</Button>
         </div>
       </form>
-      {!result && (
-        <div className="flex flex-wrap gap-1.5">
-          {SUGGESTIONS.map((s) => <button key={s} onClick={() => run.mutate(s)} className="rounded border border-line px-2 py-0.5 text-[11.5px] text-muted hover:border-line-strong hover:text-ink">{s}</button>)}
+      {run.isPending && (
+        <div className="flex items-center gap-2 rounded-md border border-line bg-surface-2/40 px-3 py-2 text-[12.5px] text-muted">
+          <Loader2 className="size-3.5 animate-spin" />Editing and re-checking the resume…
         </div>
       )}
-      <AnimatePresence mode="wait">
-        {result && (
-          <motion.div key={result.instruction + String(result.applied)} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+      <AnimatePresence initial={false}>
+        {log.map((x) => (
+          <motion.div key={x.id} layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="rounded-md border border-line bg-surface-2/40 p-3 text-[12.5px]">
-            <div className="mb-1 text-[11.5px] text-muted">“{result.instruction}”</div>
-            {result.applied ? (
-              <div className="space-y-0.5">{result.summary.map((x) => <div key={x} className="flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-strong" />{x}</div>)}</div>
-            ) : result.preview ? (
+            <div className="mb-1.5 text-[11.5px] text-muted">“{x.instruction}”</div>
+            {x.question ? (
               <div>
-                <div className="mb-1 font-medium text-ink">Changes proposed</div>
-                <ul className="mb-2 space-y-0.5">{result.summary.map((x) => <li key={x}>• {x}</li>)}</ul>
+                <p className="text-ink">{x.question}</p>
+                {!!x.options?.length && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {x.options.map((o) => (
+                      <button key={o} onClick={() => send(`${x.instruction} — the ${o} section`)}
+                        className="rounded border border-line-strong bg-surface px-2 py-0.5 text-[12px] hover:border-accent/50">{o}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : x.preview ? (
+              <div>
+                <p className="mb-1.5 text-ink">{x.report}</p>
                 <div className="max-h-56 space-y-1.5 overflow-y-auto">
-                  {result.preview.filter((p) => p.before !== p.after).slice(0, 12).map((p) => (
+                  {x.preview.filter((p) => p.before !== p.after).slice(0, 14).map((p) => (
                     <div key={p.id} className="rounded bg-surface p-1.5">
                       {p.before && <div className="text-missing line-through decoration-missing/40">{p.before}</div>}
                       {p.after && <div className="text-ink">{p.after}</div>}
                     </div>
                   ))}
                 </div>
-                {result.message && <p className="mt-1.5 text-muted">{result.message}</p>}
                 <div className="mt-2 flex justify-end gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => setResult(null)}>Cancel</Button>
-                  <Button size="sm" variant="primary" loading={confirm.isPending} onClick={() => confirm.mutate()}>Apply changes</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setLog((l) => l.filter((e) => e.id !== x.id))}>Discard</Button>
+                  <Button size="sm" variant="primary" loading={confirm.isPending} onClick={() => confirm.mutate(x)}>Apply changes</Button>
                 </div>
               </div>
             ) : (
-              <p className="text-ink-2">{result.message}</p>
+              <div className="space-y-1">
+                {x.report.split('\n').map((line, i) => line.startsWith('•')
+                  ? <div key={i} className={cx('flex gap-1.5', line.includes('Not changed') ? 'text-verify' : 'text-ink-2')}>
+                      {line.includes('Not changed') ? <Info className="mt-0.5 size-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-strong" />}
+                      <span>{line.slice(1).trim()}</span></div>
+                  : <p key={i} className={i === 0 ? 'font-medium text-ink' : 'text-ink-2'}>{line}</p>)}
+              </div>
             )}
-            {result.refused.map((r) => <p key={r} className="mt-1 flex gap-1.5 text-verify"><Info className="mt-0.5 size-3.5 shrink-0" />{r}</p>)}
-            {result.ai && <p className="mt-1.5 text-[11.5px] text-faint">{result.ai}</p>}
+            {x.ai && <p className="mt-1.5 text-[11px] text-faint">{x.ai}</p>}
           </motion.div>
-        )}
+        ))}
       </AnimatePresence>
     </div>
   )

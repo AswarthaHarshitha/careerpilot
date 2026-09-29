@@ -113,11 +113,7 @@ def test_editor_flow(generated):
         f"/api/resumes/{vid}/assistant",
         json={"instruction": "Make the resume exactly one page", "base_revision": state["revision"]},
     ).json()
-    assert not r["applied"] and r["broad"]  # broad change: previewed first
-    r = c.post(
-        f"/api/resumes/{vid}/assistant",
-        json={"instruction": "Make the resume exactly one page", "base_revision": state["revision"], "ops": r["ops"]},
-    ).json()
+    assert r["applied"], r
     state = r["state"]
     assert state["page_count"] == 1
     checks = {x["id"]: x["status"] for x in state["quality_report"]["checks"]}
@@ -175,7 +171,7 @@ def test_assistant_refuses_to_add_unevidenced_skills(generated):
         f"/api/resumes/{vid}/assistant",
         json={"instruction": "Add Kubernetes to the skills", "base_revision": s["revision"]},
     ).json()
-    assert not r["applied"] and r["refused"]
+    assert not r["applied"] and any("needs evidence" in s.get("detail", "") for s in r["steps"])
 
 
 def test_structural_requests_never_call_the_ai_provider(generated):
@@ -186,7 +182,12 @@ def test_structural_requests_never_call_the_ai_provider(generated):
     fake = FakeLLM([])
     provider.set_test_provider(fake)
     rev = c.get(f"/api/resumes/{vid}/editor").json()["revision"]
-    for instruction in ("Remove the portfolio link", "Make the resume exactly one page", "Remove the certifications"):
+    for instruction in (
+        "Remove the portfolio link",
+        "Make the resume exactly one page",
+        "Remove the achievements",
+        "Keep my portfolio out",
+    ):
         r = c.post(
             f"/api/resumes/{vid}/assistant", json={"instruction": instruction, "base_revision": rev, "apply": True}
         )

@@ -61,6 +61,8 @@ class ResumeVersion(Base):
     # Edit history: `revision` is the state currently shown; revisions above it can be redone.
     revision: Mapped[int] = mapped_column(Integer, default=1)
     used_llm: Mapped[bool] = mapped_column(Boolean, default=False)
+    # What the editing agent last worked on, so follow-ups like "some more" or "it" resolve to the same target.
+    assistant_context: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 

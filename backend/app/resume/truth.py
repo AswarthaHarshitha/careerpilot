@@ -75,7 +75,7 @@ def _numbers(text: str) -> set[str]:
     return {re.sub(r"[\s,]", "", m.group()).lower().rstrip(".") for m in NUMBER_RX.finditer(text)}
 
 
-def check_rewrite(new: str, source: str, allowed_skills: set[str]) -> Verdict:
+def check_rewrite(new: str, source: str, allowed_skills: set[str], max_len: int = 400) -> Verdict:
     problems: list[str] = []
     src_low = source.lower()
     new_numbers = _numbers(new)
@@ -92,7 +92,7 @@ def check_rewrite(new: str, source: str, allowed_skills: set[str]) -> Verdict:
         rx = re.compile(rf"(?<![a-z]){re.escape(term)}(?![a-z])", re.I)
         if rx.search(new) and not rx.search(source):
             problems.append(f"adds the claim '{term}'")
-    if len(new) > 400:
+    if len(new) > max_len:
         problems.append("is too long")
     return Verdict(not problems, sorted(set(problems)))
 
