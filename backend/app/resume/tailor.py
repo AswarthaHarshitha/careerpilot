@@ -472,8 +472,12 @@ def _tailor_skills(
         for item in c["items"]:
             for m in find_skills(item):
                 listed_keys.add(m.key)
-    # JD skills the user can back up with evidence but the skills section does not mention
-    additions = [k for k in focus.ordered if k in inputs.strong_skills and k not in listed_keys and k in SKILLS]
+    # JD skills the user can back up - demonstrated in projects, or listed in their own profile - that the skills
+    # section does not mention yet. A skill the user never claimed is not added.
+    own = set(inputs.profile_skills)
+    additions = [
+        k for k in focus.ordered if (k in inputs.strong_skills or k in own) and k not in listed_keys and k in SKILLS
+    ]
     placed: set[str] = set()
     cat_targets = []
     for c in categories:
@@ -482,7 +486,18 @@ def _tailor_skills(
             if rx.search(c["name"]):
                 accepts |= cats
         cat_targets.append(accepts)
-    for c, accepts in zip(categories, cat_targets, strict=True):
+    # Each addition goes to the first category that accepts it; one no category accepts goes to a general row
+    # ("Tools", "Other") or the last one, so a skill the user has is never silently dropped.
+    general = next(
+        (i for i, c in enumerate(categories) if re.search(r"tool|other|additional|misc", c["name"], re.I)),
+        len(categories) - 1,
+    )
+    assigned: dict[int, list[str]] = {}
+    for k in additions:
+        i = next((i for i, acc in enumerate(cat_targets) if category_of(k) in acc), general)
+        if i >= 0:
+            assigned.setdefault(i, []).append(k)
+    for i, (c, _accepts) in enumerate(zip(categories, cat_targets, strict=True)):
         items = list(c["items"])
 
         def score(item: str) -> float:
@@ -490,8 +505,8 @@ def _tailor_skills(
 
         ordered = sorted(items, key=lambda it: -score(it))
         added = []
-        for k in additions:
-            if k in placed or category_of(k) not in accepts:
+        for k in assigned.get(i, []):
+            if k in placed:
                 continue
             added.append(display_name(k))
             placed.add(k)
@@ -513,7 +528,7 @@ def _tailor_skills(
                 changes.append({"type": "reordered", "detail": f"{c['name']}: moved {', '.join(moved)} to the front"})
         if added:
             changes.append(
-                {"type": "added", "detail": f"{c['name']}: added {', '.join(added)} (demonstrated in your projects)"}
+                {"type": "added", "detail": f"{c['name']}: added {', '.join(added)} (from your profile and projects)"}
             )
         out.append({"name": c["name"], "items": new_items, "original": items})
     return out, changes

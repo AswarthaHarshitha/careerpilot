@@ -382,7 +382,24 @@ function ProjectsPanel({ j }: { j: Job }) {
 
 function GapsPanel({ j, missing }: { j: Job; missing: Requirement[] }) {
   const nav = useNavigate()
+  const qc = useQueryClient()
   const [picked, setPicked] = useState<string[]>([])
+  // "I have this": the user claims the skill. It joins their profile skills, the job is re-matched, and the next
+  // resume lists it in the skills section. Nothing is claimed on their behalf.
+  const have = useMutation({
+    mutationFn: async (r: Requirement) => {
+      try {
+        await post('/api/profile/skills', { name: r.label })
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409)) throw e // already listed under another name
+      }
+      return post<Job>(`/api/jobs/${j.id}/rematch`)
+    },
+    onSuccess: (job) => {
+      qc.setQueryData(['job', String(j.id)], job)
+      qc.invalidateQueries({ queryKey: ['profile'] })
+    },
+  })
   const m = useMutation({
     mutationFn: () => post<Suggestion>(`/api/jobs/${j.id}/suggested-projects`, { gap_keys: picked }),
     onSuccess: (s) => nav(`/suggestions/${s.id}`),
@@ -391,7 +408,7 @@ function GapsPanel({ j, missing }: { j: Job; missing: Requirement[] }) {
   const autoPlan = j.suggested_projects.find((s) => s.auto_generated)
   return (
     <Card>
-      <CardHeader title="Gaps" subtitle="Requirements with no evidence. These are not added to your resume." />
+      <CardHeader title="Gaps" subtitle="Skills with no evidence yet. Choose “I have this” for ones you know, and they go on your resume." />
       {autoPlan && (
         <Link to={`/suggestions/${autoPlan.id}`} className="mx-4 mt-3 block rounded-md border border-accent/25 bg-accent-soft/50 px-3 py-2 text-[12.5px]">
           <div className="font-medium text-ink">Your projects don't cover these. A supporting project plan is ready.</div>
@@ -405,6 +422,10 @@ function GapsPanel({ j, missing }: { j: Job; missing: Requirement[] }) {
               onChange={(e) => setPicked(e.target.checked ? [...picked, r.canonical].slice(0, 3) : picked.filter((x) => x !== r.canonical))} />
             <span className="flex-1">{r.label}</span>
             <Badge tone={r.importance === 'required' ? 'missing' : 'neutral'}>{r.importance}</Badge>
+            <Button size="sm" variant="ghost" loading={have.isPending && have.variables?.id === r.id}
+              onClick={(e) => { e.preventDefault(); have.mutate(r) }}>
+              I have this
+            </Button>
           </label>
         ))}
         {missing.length > 0 && (
@@ -413,6 +434,7 @@ function GapsPanel({ j, missing }: { j: Job; missing: Requirement[] }) {
           </Button>
         )}
         {m.error && <ErrorState compact error={m.error} />}
+        {have.error && <ErrorState compact error={have.error} />}
         {j.suggested_projects.map((s) => (
           <Link key={s.id} to={`/suggestions/${s.id}`} className="flex items-center justify-between rounded-md border border-line px-3 py-2 text-[12.5px] hover:bg-surface-2/40">
             <span className="truncate">{s.title}</span>

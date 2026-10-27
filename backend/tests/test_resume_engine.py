@@ -208,3 +208,26 @@ def test_docx_round_trip_keeps_styles():
     texts = [(p.text, p.style.name) for p in paras]
     assert ("Built routing.", "List Bullet") in texts
     assert ("Resolve", "Normal") in texts
+
+
+def test_skills_listed_in_profile_are_added_unclaimed_ones_are_not():
+    from app.resume.tailor import JobFocus, TailorInputs, _tailor_skills
+
+    focus = JobFocus(
+        weights={"typescript": 1.0, "docker": 1.0, "kubernetes": 1.0}, ordered=["typescript", "docker", "kubernetes"]
+    )
+    inputs = TailorInputs(
+        structure={},
+        focus=focus,
+        projects=[],
+        experiences=[],
+        profile_summary="",
+        profile_skills=["typescript", "docker"],  # the user listed these; Kubernetes they never claimed
+        strong_skills=set(),
+    )
+    cats = [{"name": "Programming Languages", "items": ["Python"]}, {"name": "Databases", "items": ["MySQL"]}]
+    out, changes = _tailor_skills(cats, inputs, focus)
+    assert "TypeScript" in out[0]["items"]
+    assert "Docker" in out[1]["items"]  # no tools row, so it goes to the last one rather than being dropped
+    assert not any("Kubernetes" in c["items"] for c in out)
+    assert any(c["type"] == "added" for c in changes)
