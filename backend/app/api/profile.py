@@ -41,6 +41,12 @@ class ProfileIn(BaseModel):
     email: str = Field(default="", max_length=320)
     phone: str = Field(default="", max_length=40)
     location: str = Field(default="", max_length=200)
+    street: str = Field(default="", max_length=200)
+    address_line2: str = Field(default="", max_length=200)
+    city: str = Field(default="", max_length=100)
+    state: str = Field(default="", max_length=100)
+    postal_code: str = Field(default="", max_length=20)
+    country: str = Field(default="", max_length=100)
     linkedin_url: str = ""
     github_url: str = ""
     portfolio_url: str = ""
@@ -67,6 +73,12 @@ def profile_out(p: UserProfile) -> dict:
         "email": p.email,
         "phone": p.phone,
         "location": p.location,
+        "street": p.street,
+        "address_line2": p.address_line2,
+        "city": p.city,
+        "state": p.state,
+        "postal_code": p.postal_code,
+        "country": p.country,
         "linkedin_url": p.linkedin_url,
         "github_url": p.github_url,
         "portfolio_url": p.portfolio_url,

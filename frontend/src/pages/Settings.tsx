@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClipboardCopy, KeyRound, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Page } from '../components/AppShell'
 import {
   Badge, Button, Card, CardHeader, ErrorState, Field, Input, LoadingRows, PageHeader, Select, Tabs, errorText, useToast,
 } from '../components/ui'
-import { del, get, post, put } from '../lib/api'
+import { api, del, get, post, put } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fmtDateTime, relative } from '../lib/format'
 import type { SettingsData, Template } from '../lib/types'
@@ -249,6 +249,33 @@ function Security() {
   )
 }
 
+function ImportCard() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const ref = useRef<HTMLInputElement>(null)
+  const [result, setResult] = useState<Record<string, number> | null>(null)
+  const run = useMutation({
+    mutationFn: (f: File) => { const form = new FormData(); form.append('file', f); return api<{ imported: Record<string, number> }>('/api/data/import', { form }) },
+    onSuccess: (r) => { setResult(r.imported); qc.invalidateQueries(); toast('Import finished') },
+    onError: (e) => toast(errorText(e), 'error'),
+  })
+  const labels: Record<string, string> = { profile_fields: 'profile details', experiences: 'experiences', educations: 'education entries', skills: 'skills', certifications: 'certifications', achievements: 'achievements', answers: 'saved answers', projects: 'projects', templates: 'templates' }
+  return (
+    <Card>
+      <CardHeader title="Import" subtitle="Bring in your profile, experience, education, skills, saved answers, preferences and resume templates from another CareerPilot's export. Existing details are kept; nothing is duplicated. GitHub projects are re-read from GitHub." />
+      <div className="space-y-3 p-5">
+        <input ref={ref} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) run.mutate(f); e.target.value = '' }} />
+        <Button loading={run.isPending} onClick={() => ref.current?.click()}>Import an export file</Button>
+        {result && (
+          <p className="text-[13px] text-ink-2">
+            Imported {Object.entries(result).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${labels[k] ?? k}`).join(', ') || 'nothing new — everything was already here'}.
+          </p>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 function Data() {
   const { logout } = useAuth()
   const [pw, setPw] = useState('')
@@ -261,6 +288,7 @@ function Data() {
         <CardHeader title="Export" subtitle="Everything CareerPilot stores about you, as JSON. Resume PDFs download from each version." />
         <div className="p-5"><a href="/api/data/export"><Button>Download export</Button></a></div>
       </Card>
+      <ImportCard />
       <Card>
         <CardHeader title="Delete account" subtitle="Permanently deletes your profile, jobs, resumes, applications and settings." />
         <form className="grid gap-4 p-5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); remove.mutate() }}>

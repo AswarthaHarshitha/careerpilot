@@ -2,7 +2,7 @@ import json
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
@@ -417,12 +417,30 @@ def export_data(user: User = Depends(current_user), db: Session = Depends(get_db
         rows = db.scalars(select(model).where(model.user_id == user.id)).all()
         cols = [c.key for c in inspect(model).mapper.column_attrs if c.key not in skip_cols]
         out[name] = [{c: _jsonable(getattr(r, c)) for c in cols} for r in rows]
+    from app.services.portability import export_portable
+
+    out["portable"] = export_portable(db, user.id)  # what "Import" on another CareerPilot reads back
     body = json.dumps(out, indent=1, ensure_ascii=False)
     return Response(
         body,
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="careerpilot-export.json"'},
     )
+
+
+@router.post("/data/import")
+async def import_data(file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Brings in the career profile, answers, preferences and templates from another CareerPilot's export."""
+    from app.services.portability import import_portable
+
+    raw = await file.read(25_000_001)
+    if len(raw) > 25_000_000:
+        raise AppError("The export file is too large.", code="too_large")
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise AppError("That file isn't a CareerPilot export.", code="invalid_import") from exc
+    return import_portable(db, user.id, data.get("portable") if isinstance(data, dict) and "portable" in data else data)
 
 
 def _jsonable(v):

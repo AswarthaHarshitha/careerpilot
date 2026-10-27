@@ -64,13 +64,19 @@ PATTERNS: list[tuple[str, re.Pattern]] = [
     ),
     ("salary", re.compile(r"salary|compensation|ctc|pay expectation|expected pay|desired pay", re.I)),
     ("relocate", re.compile(r"relocat", re.I)),
+    ("postal_code", re.compile(r"zip|postal|pin ?code|post ?code", re.I)),
+    (
+        "street",
+        re.compile(
+            r"street|address line ?1|^(residential |permanent |current |home )?address( line)?$|house|flat no", re.I
+        ),
+    ),
+    ("address_line2", re.compile(r"address line ?2|apartment|suite|landmark", re.I)),
+    ("city", re.compile(r"^(current )?city|^town|city ?/ ?town|^district", re.I)),
+    ("state", re.compile(r"^state|province|^region", re.I)),
     (
         "location",
-        re.compile(
-            r"current (city|location)|^city$|^location$|where are you (located|based)|your location|"
-            r"^address",
-            re.I,
-        ),
+        re.compile(r"current location|^location$|where are you (located|based)|your location", re.I),
     ),
     ("country", re.compile(r"^country|country of residence", re.I)),
     ("how_heard", re.compile(r"how did you (hear|find|learn)|where did you (hear|find)|source|referr?al source", re.I)),
@@ -301,6 +307,11 @@ def _map_field(f: FieldInput, ctx: dict) -> Mapped:
         "current_company": p.get("current_company"),
         "current_title": p.get("current_title"),
         "country": p.get("country"),
+        "street": p.get("street"),
+        "address_line2": p.get("address_line2"),
+        "city": p.get("city") or (p.get("location") or "").split(",")[0].strip(),
+        "state": p.get("state"),
+        "postal_code": p.get("postal_code"),
     }
     if key in simple and simple[key]:
         value, source, status = str(simple[key]), "profile", "filled"
@@ -357,6 +368,12 @@ def profile_context(profile, educations, experiences) -> dict:
         "github_url": profile.github_url if profile else "",
         "portfolio_url": profile.portfolio_url if profile else "",
         "location": profile.location if profile else "",
+        "street": profile.street if profile else "",
+        "address_line2": profile.address_line2 if profile else "",
+        "city": profile.city if profile else "",
+        "state": profile.state if profile else "",
+        "postal_code": profile.postal_code if profile else "",
+        "country": profile.country if profile else "",
         "work_authorization": profile.work_authorization if profile else "",
         "requires_sponsorship": profile.requires_sponsorship if profile else None,
         "willing_to_relocate": profile.willing_to_relocate if profile else None,

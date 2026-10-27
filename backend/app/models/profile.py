@@ -19,6 +19,13 @@ class UserProfile(Base):
     email: Mapped[str] = mapped_column(String(320), default="")
     phone: Mapped[str] = mapped_column(String(40), default="")
     location: Mapped[str] = mapped_column(String(200), default="")
+    # Postal address, used only to fill application forms that ask for it.
+    street: Mapped[str] = mapped_column(String(200), default="")
+    address_line2: Mapped[str] = mapped_column(String(200), default="")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    state: Mapped[str] = mapped_column(String(100), default="")
+    postal_code: Mapped[str] = mapped_column(String(20), default="")
+    country: Mapped[str] = mapped_column(String(100), default="")
     linkedin_url: Mapped[str] = mapped_column(String(300), default="")
     github_url: Mapped[str] = mapped_column(String(300), default="")
     portfolio_url: Mapped[str] = mapped_column(String(300), default="")

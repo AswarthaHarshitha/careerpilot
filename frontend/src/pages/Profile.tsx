@@ -11,6 +11,7 @@ import { del, get, post, put } from '../lib/api'
 
 type Personal = {
   full_name: string; first_name: string; last_name: string; email: string; phone: string; location: string
+  street: string; address_line2: string; city: string; state: string; postal_code: string; country: string
   linkedin_url: string; github_url: string; portfolio_url: string; headline: string; summary: string
   work_authorization: string; requires_sponsorship: boolean | null; willing_to_relocate: boolean | null
   notice_period: string; salary_expectation: string; years_of_experience: number | null; earliest_start_date: string
@@ -95,6 +96,17 @@ function PersonalForm({ p, section }: { p: Personal; section: 'personal' | 'pref
               <Field label="LinkedIn"><Input value={f.linkedin_url} onChange={s('linkedin_url')} /></Field>
               <Field label="GitHub"><Input value={f.github_url} onChange={s('github_url')} /></Field>
               <Field label="Portfolio"><Input value={f.portfolio_url} onChange={s('portfolio_url')} /></Field>
+            </div>
+            <div>
+              <div className="mb-2 text-[12.5px] font-medium text-ink-2">Address <span className="font-normal text-muted">— used only to fill application forms that ask for it</span></div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Street address" className="sm:col-span-2"><Input value={f.street ?? ''} onChange={s('street')} autoComplete="address-line1" /></Field>
+                <Field label="Address line 2"><Input value={f.address_line2 ?? ''} onChange={s('address_line2')} autoComplete="address-line2" /></Field>
+                <Field label="City"><Input value={f.city ?? ''} onChange={s('city')} autoComplete="address-level2" /></Field>
+                <Field label="State"><Input value={f.state ?? ''} onChange={s('state')} autoComplete="address-level1" /></Field>
+                <Field label="PIN / postal code"><Input value={f.postal_code ?? ''} onChange={s('postal_code')} autoComplete="postal-code" /></Field>
+                <Field label="Country"><Input value={f.country ?? ''} onChange={s('country')} autoComplete="country-name" /></Field>
+              </div>
             </div>
             <Field label="Headline"><Input value={f.headline} onChange={s('headline')} placeholder="e.g. Software engineer - backend and full-stack" /></Field>
             <Field label="Summary" hint="Used when a resume or answer needs a summary. Tailoring can reword it, never add to it."><Textarea rows={4} value={f.summary} onChange={s('summary')} /></Field>
