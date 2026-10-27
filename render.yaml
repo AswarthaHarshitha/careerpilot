@@ -33,5 +33,5 @@ services:
         sync: false
       - key: GITHUB_TOKEN # optional; read-only token for higher GitHub rate limits
         sync: false
-      - key: WORKER_THREADS
-        value: "2"
+      - key: WORKER_THREADS # one background worker keeps the free plan's 512 MB comfortable
+        value: "1"
