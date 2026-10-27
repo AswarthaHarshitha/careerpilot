@@ -16,8 +16,15 @@ _lock = threading.Lock()
 
 
 def client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    return (fwd.split(",")[0].strip() if fwd else "") or (request.client.host if request.client else "unknown")
+    """The caller's address as seen by our own proxies. The first X-Forwarded-For entry is whatever the client
+    sent, so it is never trusted: use the header Vercel sets itself, else the entry the nearest proxy appended."""
+    vercel = request.headers.get("x-vercel-forwarded-for", "").split(",")[0].strip()
+    if vercel:
+        return vercel
+    fwd = [x.strip() for x in request.headers.get("x-forwarded-for", "").split(",") if x.strip()]
+    if fwd:
+        return fwd[-1]
+    return request.client.host if request.client else "unknown"
 
 
 def limit(request: Request, bucket: str, max_hits: int, window_seconds: int) -> None:

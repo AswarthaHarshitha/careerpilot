@@ -37,6 +37,9 @@ def test_login_and_captcha_are_handed_to_the_user(site):
         page.goto(site.base + "/careers/captcha")
         page.wait_for_timeout(300)
         assert "CAPTCHA" in detect_obstacle(page)
+        page.goto(site.base + "/careers/captcha-v3")
+        page.wait_for_timeout(300)
+        assert detect_obstacle(page) is None  # an invisible score-based badge never needs the user
         page.goto(site.base + "/careers/ibm/apply/12345")
         assert detect_obstacle(page) is None
         b.close()

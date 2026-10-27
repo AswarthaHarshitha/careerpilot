@@ -124,6 +124,10 @@ LOGIN_PAGE = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE -->
 <h1>Sign in to continue</h1><form><label>Email <input name="email" type="email"></label>
 <label>Password <input name="password" type="password"></label><button>Sign in</button></form></body></html>"""
 
+CAPTCHA_V3_PAGE = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE: score-based reCAPTCHA badge -->
+<h1>Apply</h1><iframe src="/recaptcha/api2/anchor?ar=1&k=test&size=invisible" width="256" height="60"></iframe>
+</body></html>"""
+
 CAPTCHA_PAGE = """<!doctype html><html><body><!-- LOCAL TEST FIXTURE -->
 <h1>Apply</h1><iframe src="/recaptcha/api2/anchor" width="300" height="80"></iframe></body></html>"""
 
@@ -295,6 +299,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, SPA_PAGE)
         if path == "/careers/login-required":
             return self._send(200, LOGIN_PAGE)
+        if path == "/careers/captcha-v3":
+            return self._send(200, CAPTCHA_V3_PAGE)
         if path == "/careers/captcha":
             return self._send(200, CAPTCHA_PAGE)
         if path.startswith("/recaptcha/"):

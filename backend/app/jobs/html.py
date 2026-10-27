@@ -97,7 +97,10 @@ def _is_heading_like(tag: Tag) -> bool:
     return siblings_text == text
 
 
-def extract_json_ld_jobposting(soup: BeautifulSoup) -> dict | None:
+def extract_json_ld_jobposting(soup: BeautifulSoup, site_name: str = "") -> dict | None:
+    """The page's JobPosting. Some sites embed one for themselves as well as the real one; prefer the posting whose
+    hiring organisation is not the site itself."""
+    found = []
     for script in soup.find_all("script", attrs={"type": re.compile("ld\\+json", re.I)}):
         raw = script.string or script.get_text() or ""
         try:
@@ -108,8 +111,20 @@ def extract_json_ld_jobposting(soup: BeautifulSoup) -> dict | None:
             t = obj.get("@type")
             types = t if isinstance(t, list) else [t]
             if "JobPosting" in types:
-                return obj
-    return None
+                found.append(obj)
+    if not found:
+        return None
+    site = re.sub(r"[^a-z0-9]", "", (site_name or "").lower())
+
+    def org(o: dict) -> str:
+        h = o.get("hiringOrganization")
+        return re.sub(r"[^a-z0-9]", "", str(h.get("name", "") if isinstance(h, dict) else h or "").lower())
+
+    if site:
+        real = [o for o in found if org(o) and org(o) not in site and site not in org(o)]
+        if real:
+            return real[0]
+    return found[0]
 
 
 def _iter_ld(data):

@@ -13,7 +13,9 @@ export default function Login() {
   const [name, setName] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
-  const setup = state.data?.needs_setup
+  const [mode, setMode] = useState<'signin' | 'register'>('signin')
+  const setup = state.data?.needs_setup || mode === 'register'
+  const canRegister = !state.data?.needs_setup && state.data?.registration_open
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -42,9 +44,9 @@ export default function Login() {
           <ErrorState error={state.error} onRetry={() => state.refetch()} />
         ) : (
           <>
-            <h1 className="font-serif text-[26px] font-semibold leading-tight">{setup ? 'Set up your workspace' : 'Sign in'}</h1>
+            <h1 className="font-serif text-[26px] font-semibold leading-tight">{state.data?.needs_setup ? 'Set up your workspace' : setup ? 'Create an account' : 'Sign in'}</h1>
             <p className="mt-1.5 text-[13.5px] text-muted">
-              {setup ? 'Create the owner account. Registration closes after this.' : 'Your job applications, evidence and resumes.'}
+              {state.data?.needs_setup ? 'Create the owner account. Registration closes after this.' : setup ? 'Your data is private to your account.' : 'Your job applications, evidence and resumes.'}
             </p>
             <form onSubmit={submit} className="mt-6 space-y-3.5">
               {setup && (
@@ -63,6 +65,13 @@ export default function Login() {
                 {setup ? 'Create account' : 'Sign in'}
               </Button>
             </form>
+            {canRegister && (
+              <button type="button" onClick={() => { setMode(mode === 'register' ? 'signin' : 'register'); setError(null) }}
+                className="mt-4 text-[13px] text-muted underline-offset-2 hover:text-ink hover:underline">
+                {mode === 'register' ? 'I already have an account' : 'Create an account'}
+              </button>
+            )}
+            {!setup && <p className="mt-4 text-[12px] text-faint">Forgot your password? Whoever runs this CareerPilot server can reset it with <code className="font-mono">careerpilot-admin reset-password</code>.</p>}
           </>
         )}
       </motion.div>

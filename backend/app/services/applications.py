@@ -490,7 +490,14 @@ def fill_plan(db: Session, s: AutomationSession) -> list[dict]:
             continue
         action = "upload" if f.input_type == "file" else ("check" if f.input_type == "checkbox" else "fill")
         out.append(
-            {"field_ref": f.field_ref, "value": f.value, "action": action, "input_type": f.input_type, "step": f.step}
+            {
+                "field_ref": f.field_ref,
+                "label": f.label,
+                "value": f.value,
+                "action": action,
+                "input_type": f.input_type,
+                "step": f.step,
+            }
         )
     return out
 
@@ -517,7 +524,11 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
         s.message = str(report["message"])[:1000]
         _log(s, s.message)
     shot = report.get("screenshot_b64")
-    if isinstance(shot, str) and len(shot) < 4_000_000:
+    # one screenshot per state change or every 10 s at most: they are stored in the database
+    fresh_shot = str(report.get("state", s.state)) != s.state or (
+        s.updated_at is None or (datetime.now(UTC) - s.updated_at).total_seconds() > 10
+    )
+    if isinstance(shot, str) and len(shot) < 4_000_000 and fresh_shot:
         try:
             png = base64.b64decode(shot, validate=True)
             if png.startswith(b"\x89PNG"):
@@ -558,6 +569,7 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
         "submitted_unverified",
         "unsupported",
         "failed",
+        "cancelled",  # the user closed the runner's browser window
     }
     if state not in allowed:
         raise AppError("Unknown session state.", code="invalid_state")
@@ -566,6 +578,10 @@ def apply_report(db: Session, s: AutomationSession, report: dict) -> None:
     if s.state == "submit_confirmed" and state in ("awaiting_review", "awaiting_answers", "filling", "running"):
         # the runner is still settling; keep the user's confirmation pending
         state = "submit_confirmed"
+    if s.state == "submit_confirmed" and state == "action_required":
+        # the runner refused to submit (answers changed on the page): the user must look and confirm again
+        s.submit_confirmed_at = None
+        _log(s, "Submission held back; your confirmation was cleared until you review again")
     if state == "submitting" and s.submit_clicked_at is None:
         s.submit_clicked_at = datetime.now(UTC)
     s.state = state

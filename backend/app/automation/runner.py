@@ -186,6 +186,7 @@ class SessionRunner:
         self.filled_revision = -1
         self.resume_nonce = session.get("resume_nonce", 0)
         self.page_errors = 0
+        self.seen: dict = {}  # every field seen on any page, for checks after the page moved on
 
     # -- reporting --------------------------------------------------------------------------------------
 
@@ -252,7 +253,7 @@ class SessionRunner:
         if ins["cancelled"] or ins["terminal"]:
             return ins["state"]
         if ins["submit"]:
-            return self._submit()
+            return self._submit() or None
         if ins["resume_nonce"] != self.resume_nonce:
             self.resume_nonce = ins["resume_nonce"]
             self.event("RESUMING", "Looking at the page again")
@@ -371,6 +372,7 @@ class SessionRunner:
             self.step += 1
             self.event("INSPECTING_PAGE", f"Page {self.step + 1} opened")
         self.event("MAPPING_FORM", f"Reading the fields on page {self.step + 1}")
+        self.seen.update({f.ref: f for f in found})
         self.found = {f.ref: f for f in found}
         payload = [
             {
@@ -445,6 +447,16 @@ class SessionRunner:
         return bool(after - before) or bool(self.B.detect_obstacle(self.page))
 
     def _next_step(self, hit) -> None:
+        problems = self._verify()
+        if problems:
+            msg = (
+                f"Page {self.step + 1} lost some answers after they were filled: "
+                + "; ".join(problems[:5])
+                + ". Check them in the browser window, then click Continue application."
+            )
+            self.event("VALIDATING_FORM", msg)
+            self.report("action_required", msg, phase="WAITING_FOR_USER")
+            return
         frame, btn = hit
         before = {f.data["label"] for f in self.B.inspect_form(self.page)}
         loc = frame.locator(f'[data-cp-btn="{btn["ref"]}"]').first
@@ -490,6 +502,16 @@ class SessionRunner:
                 phase="SUBMISSION_UNCERTAIN",
             )
             return "submitted_unverified"
+        problems = self._verify_before_submit()
+        if problems:
+            msg = (
+                "Nothing was submitted: just before submitting, these fields no longer held your answers: "
+                + "; ".join(problems[:5])
+                + ". CareerPilot filled them again; check the browser window, then review and confirm again."
+            )
+            self.event("VALIDATING_FORM", msg)
+            self.report("action_required", msg, phase="WAITING_FOR_USER")
+            return ""
         # Recorded before the click, so a crash after it can never lead to a second submission.
         self.report("submitting", "Submitting the application...", phase="SUBMITTING")
         frame, btn = hit
@@ -528,11 +550,64 @@ class SessionRunner:
         )
         return "submitted_unverified"
 
+    def _verify_before_submit(self) -> list[str]:
+        self.event("VALIDATING_FORM", "Re-checking every answer before submitting")
+        return self._verify(all_steps=True)
+
+    def _verify(self, all_steps: bool = False) -> list[str]:
+        """Re-reads every field CareerPilot filled. Pages can re-render and silently drop values, so this runs
+        before leaving each page and before submitting; anything wrong is filled again, then checked again."""
+        ins = self.api.instructions(self.sid)
+        fresh = {f.ref: f for f in self.B.inspect_form(self.page)}
+        self.seen.update(fresh)
+        self.found = fresh or self.found
+        by_label = {}
+        for f in fresh.values():
+            by_label.setdefault((f.data["label"], f.data["input_type"]), f.ref)
+        problems = []
+        for item in ins["fill"]:
+            step = item.get("step", 0)
+            if step != self.step and not all_steps:
+                continue
+            ref = item["field_ref"]
+            if ref not in fresh:
+                ref = by_label.get((item.get("label"), item["input_type"]), ref)
+            pool = fresh if ref in fresh else self.seen
+            args = (self.page, pool, ref, item["action"], item["value"], item["input_type"], self.resume_path)
+            ok, shown = self.B.field_holds(*args)
+            if not ok and shown == "field not found" and step != self.step:
+                continue  # an earlier page that is no longer part of this document
+            if not ok:
+                self.B.fill_field(*args)
+                self.page.wait_for_timeout(300)
+                ok, shown = self.B.field_holds(*args)
+            if not ok:
+                problems.append(f"{item.get('label') or 'a field'} (page shows: {shown})")
+        empty_required = [
+            f.data["label"]
+            for f in fresh.values()
+            if f.data.get("required")
+            and f.data.get("has_value") is False
+            and not f.data.get("option_refs")
+            and f.data["input_type"] != "file"
+        ]
+        problems += [f"{label} (required, empty)" for label in empty_required[:5]]
+        return problems
+
     def _body(self) -> str:
         try:
             return self.page.inner_text("body", timeout=3000)
         except Exception:  # noqa: BLE001
             return ""
+
+
+def _window_closed(exc: Exception, page) -> bool:
+    try:
+        if page.is_closed():
+            return True
+    except Exception:  # noqa: BLE001
+        return True
+    return type(exc).__name__ == "TargetClosedError" or "has been closed" in str(exc)
 
 
 def browser_profile_dir() -> str:
@@ -555,12 +630,16 @@ def run_loop(
 
     results = []
     with sync_playwright() as pw, tempfile.TemporaryDirectory(prefix="cp-runner-") as workdir:
-        ctx = pw.chromium.launch_persistent_context(
-            profile_dir or browser_profile_dir(),
-            headless=headless,
-            accept_downloads=False,
-            viewport={"width": 1280, "height": 900},
-        )
+
+        def launch():
+            return pw.chromium.launch_persistent_context(
+                profile_dir or browser_profile_dir(),
+                headless=headless,
+                accept_downloads=False,
+                viewport={"width": 1280, "height": 900},
+            )
+
+        ctx = launch()
         try:
             while not (stop and stop.is_set()):
                 try:
@@ -574,7 +653,11 @@ def run_loop(
                         break
                     time.sleep(idle_poll)
                     continue
-                page = ctx.new_page()
+                try:
+                    page = ctx.new_page()
+                except Exception:  # noqa: BLE001 - the user closed the whole browser earlier: start a fresh one
+                    ctx = launch()
+                    page = ctx.new_page()
                 page.on("dialog", lambda d: d.dismiss())  # unexpected alerts never block the agent
                 log.info("Session %s: %s at %s", session["session_id"], session["role_title"], session["company"])
                 api.heartbeat("working", f"{session['role_title']} at {session['company']}")
@@ -586,17 +669,27 @@ def run_loop(
                     log.error("%s", exc)
                     state = "failed"
                 except Exception as exc:  # noqa: BLE001
-                    log.error("Session %s failed: %s", session["session_id"], exc)
+                    closed = _window_closed(exc, page)
+                    log.error("Session %s %s: %s", session["session_id"], "stopped" if closed else "failed", exc)
                     try:
-                        api.report(
-                            session["session_id"],
-                            state="failed",
-                            phase="FAILED",
-                            message=f"The runner hit an error ({type(exc).__name__}). Nothing was submitted.",
-                        )
+                        if closed:
+                            api.report(
+                                session["session_id"],
+                                state="cancelled",
+                                phase="CANCELLED",
+                                message="You closed the browser window, so the application stopped. Nothing was "
+                                "submitted. Choose Start again to reopen it.",
+                            )
+                        else:
+                            api.report(
+                                session["session_id"],
+                                state="failed",
+                                phase="FAILED",
+                                message=f"The runner hit an error ({type(exc).__name__}). Nothing was submitted.",
+                            )
                     except Exception:  # noqa: BLE001
                         pass
-                    state = "failed"
+                    state = "cancelled" if closed else "failed"
                 results.append(state)
                 api.heartbeat("idle", "Ready")
                 log.info("Session %s finished: %s", session["session_id"], state)
@@ -700,6 +793,25 @@ def start_service() -> str:
     return "Run: schtasks /Run /TN CareerPilotRunner"
 
 
+def _wait_for_server(api: Api, api_url: str, first_error: Exception) -> dict:
+    """CareerPilot is not reachable yet (laptop just woke up, server restarting): keep trying, quietly."""
+    delay, last_logged = 5.0, 0.0
+    error: Exception = first_error
+    while True:
+        if time.time() - last_logged > 300:
+            log.warning("CareerPilot at %s is not reachable (%s); retrying in the background", api_url, error)
+            last_logged = time.time()
+        time.sleep(delay)
+        delay = min(delay * 2, 60.0)
+        try:
+            return api.connect()
+        except Exception as exc:  # noqa: BLE001
+            if "401" in str(exc) or "revoked" in str(exc).lower():
+                log.error("The runner token was rejected. Create a new token in Settings and reinstall the runner.")
+                delay = 600.0
+            error = exc
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CareerPilot Runner - the local application agent")
     parser.add_argument("command", nargs="?", default="run", choices=["run", "install", "uninstall", "start", "status"])
@@ -735,8 +847,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         who = api.connect()
     except Exception as exc:  # noqa: BLE001
-        print(f"Could not connect to CareerPilot at {api_url}: {exc}", file=sys.stderr)
-        return 1
+        if args.command != "run":
+            print(f"Could not connect to CareerPilot at {api_url}: {exc}", file=sys.stderr)
+            return 1
+        who = _wait_for_server(api, api_url, exc)
     if args.command == "status":
         print(f"Connected to {api_url} as {who['user']} (token '{who['token']}').")
         return 0

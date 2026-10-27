@@ -11,7 +11,7 @@ from app.matching.engine import (
     score_projects,
 )
 from app.matching.taxonomy import canonicalize, find_skills
-from tests.conftest import SAMPLE_JD
+from tests.conftest import SAMPLE_JD, run_tasks
 
 # --- taxonomy -------------------------------------------------------------------------------------
 
@@ -217,3 +217,42 @@ def test_oracle_recruiting_cloud_postings_are_read_from_the_job_api(monkeypatch)
     assert 'Id="344317",siteNumber=CX_45001' in seen[1] and seen[1].startswith("https://acme.fa.us2.oraclecloud.com")
     assert "Develop reports using SQL" in p.description_text
     assert p.deadline is None  # no end date in the data, so none is invented
+
+
+AGGREGATOR_PAGE = """<!doctype html><html><head><meta property="og:site_name" content="Listing Hub">
+<script type="application/ld+json">{"@type":"JobPosting","title":"Analyst","hiringOrganization":{"name":"Listing Hub"}}</script>
+<script type="application/ld+json">{"@type":"JobPosting","title":"Associate Analyst","description":"<p>Associate Analyst role for freshers. Eligibility: any graduate. Location: Bengaluru. \
+Responsibilities: data quality checks and reports. Skills: SQL, Excel and communication. Apply before the deadline.</p>","hiringOrganization":{"name":"Acme Corp "}}</script>
+</head><body><article><h1>Acme Corp hiring Associate Analyst</h1>
+<p>Acme Corp is hiring freshers. Apply using the official link below.</p>
+<a href="https://whatsapp.com/channel/abc">Click here</a>
+<a href="https://careers.acmecorp.com/jobs/12345/associate-analyst">Apply for job</a></article>
+<aside><a href="/job/other-company-1/">Apply For This Job</a><a href="/job/other-company-2/">Apply For This Job</a>
+<a href="/job/other-company-3/">Apply For This Job</a></aside></body></html>"""
+
+
+def test_aggregator_pages_use_the_employer_link_not_other_listings():
+    from app.jobs.platforms import _parse_html
+
+    p = _parse_html(AGGREGATOR_PAGE, "https://listinghub.example/job/acme-associate-analyst/", "generic")
+    assert p.from_aggregator
+    assert p.company == "Acme Corp"  # the employer, not the listing site
+    assert p.title == "Associate Analyst"
+    assert p.application_url == "https://careers.acmecorp.com/jobs/12345/associate-analyst"
+    assert "job listing site" in p.notes[0]
+
+
+def test_aggregator_without_employer_link_asks_for_one():
+    from app.jobs.platforms import _parse_html
+
+    html = AGGREGATOR_PAGE.replace("https://careers.acmecorp.com/jobs/12345/associate-analyst", "/job/acme-more/")
+    p = _parse_html(html, "https://listinghub.example/job/acme-associate-analyst/", "generic")
+    assert p.from_aggregator and p.application_url == ""
+    assert "Add the employer's application link" in p.notes[0]
+
+
+def test_non_job_pages_are_rejected(auth_client):
+    r = auth_client.post("/api/jobs", json={"description": "Follow this channel on WhatsApp for daily updates. " * 8})
+    run_tasks()
+    job = auth_client.get(f"/api/jobs/{r.json()['job']['id']}").json()
+    assert job["analysis_state"] == "failed" and "doesn't look like a job posting" in job["analysis_error"]

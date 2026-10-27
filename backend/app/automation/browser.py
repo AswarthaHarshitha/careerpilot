@@ -158,10 +158,18 @@ def _frames(page: Page) -> list[Frame]:
 def detect_obstacle(page: Page) -> str | None:
     """Returns a message for the user if the page needs a human (sign-in, CAPTCHA), else None."""
     for f in _frames(page):
-        if f != page.main_frame and CAPTCHA_FRAME.search(f.url or ""):
+        url = f.url or ""
+        if f != page.main_frame and CAPTCHA_FRAME.search(url):
+            # Invisible / score-based checks (reCAPTCHA v3, invisible reCAPTCHA, the badge in the corner) never
+            # need a person; only a visible challenge or checkbox does.
+            if re.search(
+                r"[?&]size=invisible|render=|/recaptcha/api2/aframe|/recaptcha/enterprise/anchor\?.*size=invisible", url
+            ):
+                continue
             try:
                 el = f.frame_element()
-                if el.is_visible():
+                box = el.bounding_box() if el.is_visible() else None
+                if box and box["width"] >= 200 and box["height"] >= 60:
                     return "Complete the CAPTCHA / security check in the browser window. CareerPilot will continue."
             except Exception:  # noqa: BLE001
                 continue
@@ -320,6 +328,61 @@ def fill_field(
         return True, ""
     except Exception as exc:  # noqa: BLE001
         return False, f"Could not fill automatically ({type(exc).__name__})."
+
+
+def field_holds(
+    page: Page,
+    found: dict[str, FoundField],
+    ref: str,
+    action: str,
+    value: str,
+    input_type: str,
+    resume_path: str | None,
+) -> tuple[bool, str]:
+    """Whether the field on the page still holds the intended value. Returns (ok, what the page shows)."""
+    ff = found.get(ref)
+    frame, local = _frame_for(page, ref)
+    if ff is None or frame is None:
+        return False, "field not found"
+    try:
+        if input_type in ("radio", "checkbox") and ff.data.get("option_refs"):
+            checked = [
+                ff.data["options"][i]
+                for i, r in enumerate(ff.data["option_refs"])
+                if frame.locator(f'[data-cp-ref="{r}"]').first.is_checked(timeout=3000)
+            ]
+            wanted = [v.strip() for v in value.split(";") if v.strip()] if input_type == "checkbox" else [value]
+            idx = [_best_option(ff.data["options"], w) for w in wanted]
+            ok = all(i is not None and ff.data["options"][i] in checked for i in idx)
+            return ok, ", ".join(checked) or "nothing selected"
+        loc = frame.locator(f'[data-cp-ref="{local}"]').first
+        if loc.count() == 0:
+            return False, "field not found"
+        if action == "upload":
+            names = loc.evaluate("el => Array.from(el.files || []).map(f => f.name)") or []
+            name = (resume_path or "").replace("\\", "/").rsplit("/", 1)[-1]
+            return bool(name) and name in names, ", ".join(names) or "no file"
+        if action == "check":
+            want = value.lower() in ("true", "yes", "1", "on")
+            is_on = loc.is_checked(timeout=3000)
+            return is_on == want, "checked" if is_on else "not checked"
+        if input_type == "select":
+            shown = loc.evaluate("el => el.selectedIndex >= 0 ? (el.options[el.selectedIndex].text || '').trim() : ''")
+            raw = loc.input_value(timeout=3000)
+            v = value.strip().lower()
+            return v in (shown.lower(), raw.strip().lower()), shown or "nothing selected"
+        current = loc.input_value(timeout=3000).strip()
+        want = value.strip()
+        if input_type == "number":
+            try:
+                return float(current) == float(want), current or "empty"
+            except ValueError:
+                return False, current or "empty"
+        if input_type == "combobox":
+            return want.lower() in current.lower() and bool(current), current or "empty"
+        return re.sub(r"\s+", " ", current) == re.sub(r"\s+", " ", want), current[:60] or "empty"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"unreadable ({type(exc).__name__})"
 
 
 def _best_option(options: list[str], value: str) -> int | None:

@@ -176,6 +176,20 @@ def text_from_upload(filename: str, data: bytes) -> tuple[str, str]:
     return text, method
 
 
+JOB_SIGNALS = re.compile(
+    r"\b(responsibilit\w*|requirements?|qualifications?|eligibility|experience|skills?|role|position|job description|"
+    r"apply|hiring|candidate|salary|ctc|stipend|full[- ]time|part[- ]time|internship|fresher\w*|graduate|degree|"
+    r"bachelor|b\.?tech|location|work from|you will|we are looking)\b",
+    re.I,
+)
+
+
+def looks_like_job_posting(text: str) -> bool:
+    """A job posting talks about the role; a chat channel, news item or homepage mostly doesn't."""
+    hits = {m.group(1).lower() for m in JOB_SIGNALS.finditer(text or "")}
+    return len(text or "") >= 300 and len(hits) >= 4
+
+
 @task_handler("job_analyze")
 def analyze_job_task(ctx: TaskContext) -> dict:
     db = ctx.db
@@ -267,6 +281,13 @@ def _analyze(ctx: TaskContext, job: Job) -> dict:
             )
         db.commit()
         if not analysis.requirements:
+            if not looks_like_job_posting(text):
+                raise AppError(
+                    "This page doesn't look like a job posting.",
+                    code="not_a_job",
+                    hint="Open the employer's job page and paste its link, or paste the job description itself.",
+                    actions=["paste_description"],
+                )
             notes.append("No specific skills were recognised in this posting.")
 
     with ctx.step("Checking your profile"):

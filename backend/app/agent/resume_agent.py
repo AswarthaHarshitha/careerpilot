@@ -37,6 +37,7 @@ STRUCT_OPS = (
     "REMOVE_SKILL",
     "ADD_SKILL",
     "REDUCE_CONTENT",
+    "LIMIT_ENTRIES",
 )
 DOC_OPS = ("SET_PAGE_TARGET", "UNDO", "REDO", "RESTORE_VERSION")
 ALL_OPS = TEXT_OPS + STRUCT_OPS + DOC_OPS
@@ -199,8 +200,20 @@ def _target_for(ctx: Context, low: str) -> tuple[str, str]:
     """(kind, id) of what a clause is about: a selection, a named section or entry, the last target, or ''."""
     elements = index(ctx.content)
     secs = _sections_in(ctx.content, low)
+    bullet_word = re.search(r"\b(bullet|point|line item)s?\b", low)
+    section_word = re.search(r"\b(this|that|the|current) section\b", low)
+    if section_word and ctx.selection and not secs:
+        sec = elements.get(ctx.selection[0], {}).get("section")
+        if sec:
+            return "section", sec
     if PRONOUN_RX.search(low) and ctx.selection:
         return "selection", ",".join(ctx.selection)
+    if bullet_word and not ctx.selection:
+        ent = _entry_in(ctx.content, low)
+        if ent:
+            return "entry", ent[1]["id"]
+        bullets = [t for t in ctx.last_targets if elements.get(t, {}).get("type") == "bullet"]
+        return ("last", ",".join(bullets)) if bullets else ("", "")
     ent = _entry_in(ctx.content, low)
     if ent and not (secs and ent[0]["id"] != secs[0]["id"]):
         return "entry", ent[1]["id"]
@@ -259,6 +272,30 @@ def rule_step(ctx: Context, clause: str) -> Step | None:
     ):
         return Step("REDUCE_CONTENT", clause=clause, label="Remove content that does not support this job")
 
+    m = re.search(
+        r"\b(?:use|keep|show|include|limit(?: it)? to|only)\s+(?:only\s+)?(?:the\s+)?(?:top\s+|best\s+|first\s+)?"
+        r"(one|two|three|four|five|six|\d)\s+(projects?|experiences?|roles?|jobs?|certifications?)\b",
+        low,
+    )
+    if m:
+        n = WORDNUM.get(m.group(1)) or int(m.group(1))
+        kind = {
+            "project": "projects",
+            "experience": "experience",
+            "role": "experience",
+            "job": "experience",
+            "certification": "certifications",
+        }[m.group(2).rstrip("s")]
+        sec = next((x for x in content["sections"] if x["kind"] == kind and not x.get("removed")), None)
+        if sec:
+            return Step(
+                "LIMIT_ENTRIES",
+                target=sec["id"],
+                params={"n": n},
+                clause=clause,
+                label=f"Keep {n} {m.group(2) if n != 1 else m.group(2).rstrip('s')}",
+            )
+
     ordinal = next((v for k, v in ORDINAL.items() if re.search(rf"\b{k}\b", low)), None)
     rel = re.search(r"\b(above|before|below|after)\b(.+)$", low)
     if ordinal is not None or rel:
@@ -316,7 +353,8 @@ def rule_step(ctx: Context, clause: str) -> Step | None:
     if re.search(r"\b(remove|delete|drop|hide|get rid of|take out|exclude)\b", low) and not text_op:
         ent = _entry_in(content, low)
         secs = _sections_in(content, low)
-        if ent and not secs:
+        says_section = re.search(r"\b(section|all (?:the |my )?(?:projects|experience|certifications))\b", low)
+        if ent and (not secs or (ent[0] in secs and not says_section)):
             return Step(
                 "REMOVE_ENTRY", target=ent[1]["id"], clause=clause, label=f"Remove {ent[1]['fields'].get('primary')}"
             )
@@ -392,6 +430,8 @@ def ra_ctx_with_last(ctx: Context, ids: list[str]) -> Context:
 
 def _question_for(ctx: Context, clause: str) -> tuple[str, list[str]]:
     low = clause.lower()
+    if re.search(r"\b(bullet|point)s?\b", low):
+        return "Which bullet? Click it in the editor, then ask again — or name the project or role it belongs to.", []
     names = [s.get("title_text") or s["title"] for s in ctx.content["sections"] if not s.get("removed")]
     if EXPAND_RX.search(low) or SHORTEN_RX.search(low) or REWRITE_RX.search(low) or EMPHASIS_RX.search(low):
         return "Which part should I change?", [n for n in names if n][:5]
@@ -408,6 +448,7 @@ INTENT_SYSTEM = (
     "REORDER_ENTRY: target = entry id; params {position: 0-based}\n"
     "REMOVE_SECTION / RESTORE_SECTION: target = section id. REMOVE_ENTRY / RESTORE_ENTRY: target = entry id\n"
     "REMOVE_SKILL / ADD_SKILL: target = skill name. REDUCE_CONTENT: remove content least relevant to the job\n"
+    "LIMIT_ENTRIES: target = section id; params {n: how many entries to keep}\n"
     "SET_PAGE_TARGET: params {pages: 1|2}. UNDO. REDO.\n"
     "Pronouns (this, it, that) refer to the selection, else to the last edited target. "
     'Return {"steps": [{"op": "...", "target": "...", "params": {}, "label": "short description"}], '
@@ -528,6 +569,10 @@ def _model_understand(
         elif op in ("REORDER_ENTRY", "REMOVE_ENTRY", "RESTORE_ENTRY") and not _grounded(ctx, target, instruction):
             dropped.append(str(raw.get("label") or op))
             continue
+        elif op == "LIMIT_ENTRIES":
+            if target not in section_ids or not str(params.get("n", "")).isdigit():
+                continue
+            params = {"n": max(1, int(params["n"]))}
         elif op == "SET_PAGE_TARGET":
             params = {"pages": 2 if params.get("pages") == 2 else 1}
         elif op == "REORDER_ENTRY":
@@ -796,6 +841,14 @@ def structural_ops(ctx: Context, step: Step) -> tuple[list[dict], str]:
         return [], (f"adding “{step.target}” needs evidence: add it to your profile skills or a verified project first")
     if step.op == "REDUCE_CONTENT":
         return reduce_content(ctx)
+    if step.op == "LIMIT_ENTRIES":
+        sec = next((x for x in c["sections"] if x["id"] == step.target), None)
+        entries = (sec or {}).get("entries") or []
+        n = int(step.params.get("n", len(entries)))
+        if len(entries) <= n:
+            return [], f"there are already {len(entries)}"
+        # keep the first n in the current order (the user's own ordering decides what matters most)
+        return [{"op": "remove_entry", "id": e["id"]} for e in entries[n:]], ""
     return [], "not supported"
 
 

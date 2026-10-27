@@ -34,6 +34,7 @@ class RawPosting:
     deadline: date | None = None
     deadline_source: str = ""
     notes: list[str] = field(default_factory=list)
+    from_aggregator: bool = False  # a listing site that reposts the job; application_url is the employer's link
 
 
 def detect_platform(url: str) -> str:
@@ -278,6 +279,8 @@ def _generic(url: str, platform: str) -> RawPosting:
             if len(rendered.description_text) > len(post.description_text):
                 rendered.notes.append("The page was read after running its JavaScript.")
                 post = rendered
+    if post.from_aggregator and post.application_url:
+        post = _with_employer_posting(post)
     if len(post.description_text) < 150:
         raise ExternalFetchError(
             "The job page did not contain a readable job description.",
@@ -287,10 +290,44 @@ def _generic(url: str, platform: str) -> RawPosting:
     return post
 
 
+def _with_employer_posting(listing: RawPosting) -> RawPosting:
+    """Reads the employer's own posting behind an aggregator listing; keeps the listing if that page can't be read."""
+    target = listing.application_url
+    try:
+        employer = fetch_posting(target) if detect_platform(target) != "generic" else _generic_once(target)
+    except ExternalFetchError as exc:
+        listing.notes.append(
+            f"The employer's page could not be read ({exc.message}); the listing's description is used."
+        )
+        return listing
+    if employer.from_aggregator or len(employer.description_text) < max(300, len(listing.description_text) // 3):
+        listing.notes.append("The employer's page had little readable text; the listing's description is used.")
+        return listing
+    employer.job_url = listing.job_url
+    employer.company = employer.company or listing.company
+    employer.title = employer.title or listing.title
+    employer.location = employer.location or listing.location
+    employer.application_url = employer.application_url or target
+    employer.notes = listing.notes + ["The description was read from the employer's own posting."] + employer.notes
+    employer.from_aggregator = True
+    return employer
+
+
+def _generic_once(url: str) -> RawPosting:
+    res = fetch(url)
+    if "json" in res.content_type:
+        raise ExternalFetchError("The employer link returned data instead of a page.")
+    return _oracle_from_page(res.text, res.url) or _parse_html(res.text, res.url, detect_platform(url))
+
+
 def _parse_html(html: str, page_url: str, platform: str) -> RawPosting:
+    from app.jobs import aggregators
+
     soup = BeautifulSoup(html, "lxml")
     meta = page_meta(soup)
-    ld = extract_json_ld_jobposting(soup)
+    site_host = (urlsplit(page_url).hostname or "").removeprefix("www.")
+    aggregator = aggregators.is_aggregator(soup, page_url)
+    ld = extract_json_ld_jobposting(soup, (meta["site_name"] or site_host.split(".")[0]) if aggregator else "")
     post = RawPosting(platform=platform, job_url=page_url)
     if ld:
         post.title = _s(ld.get("title"))
@@ -320,6 +357,25 @@ def _parse_html(html: str, page_url: str, platform: str) -> RawPosting:
         post.title = meta["h1"] or meta["og_title"] or meta["title"]
     if not post.company:
         post.company = meta["site_name"]
+    post.company = post.company.replace("\xa0", " ").strip()
+    if aggregator:
+        post.from_aggregator = True
+        site_key = re.sub(r"[^a-z0-9]", "", (meta["site_name"] or site_host.split(".")[0]).lower())
+        if site_key and re.sub(r"[^a-z0-9]", "", post.company.lower()) in (site_key, ""):
+            post.company = ""  # the listing site, not the employer
+        links = aggregators.employer_links(soup, page_url, post.company)
+        post.application_url = links[0] if links else ""
+        if links:
+            extra = f" ({len(links)} employer links were found; check it is the right role)" if len(links) > 1 else ""
+            post.notes.append(
+                f"This page is a job listing site. The employer's application page is used: {links[0]}{extra}"
+            )
+        else:
+            post.notes.append(
+                "This page is a job listing site and no link to the employer's own application page was found. "
+                "Add the employer's application link on the job page before applying."
+            )
+        return post
     post.application_url = post.application_url or _find_apply_link(soup, page_url) or page_url
     return post
 

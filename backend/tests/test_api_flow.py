@@ -171,12 +171,15 @@ def test_full_resume_flow(auth_client):
     versions = c.get("/api/resumes").json()
     assert any(x["is_base"] for x in versions)
 
-    # edit a draft, then approve (locks it), duplicate, compare
-    content = v["content"]
-    content["sections"][0]["text"] = "Backend-focused engineer."
-    assert c.patch(f"/api/resumes/{vid}", json={"content": content}).status_code == 200
+    # edit through the editor (one write path, with history), approve, then any edit needs approving again
+    rev = c.get(f"/api/resumes/{vid}/editor").json()["revision"]
+    op = {"op": "update_text", "id": "summary.text", "text": "Backend-focused engineer."}
+    r = c.post(f"/api/resumes/{vid}/ops", json={"base_revision": rev, "ops": [op]})
+    assert r.status_code == 200, r.text
     assert c.post(f"/api/resumes/{vid}/approve").status_code == 200
-    assert c.patch(f"/api/resumes/{vid}", json={"content": content}).json()["error"]["code"] == "version_locked"
+    r = c.post(f"/api/resumes/{vid}/ops", json={"base_revision": r.json()["revision"], "ops": [op]})
+    assert r.json()["status"] == "draft"
+    assert c.post(f"/api/resumes/{vid}/approve").status_code == 200
     dup = c.post(f"/api/resumes/{vid}/duplicate").json()
     diff = c.get(f"/api/resumes/compare?a={vid}&b={dup['id']}").json()
     assert diff["differences"] == []

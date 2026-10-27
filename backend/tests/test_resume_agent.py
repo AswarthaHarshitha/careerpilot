@@ -245,3 +245,27 @@ def test_names_are_matched_by_distinctive_word_and_model_cannot_substitute_entri
     fake = FakeLLM([{"steps": [{"op": "REORDER_ENTRY", "target": "projects.commitments", "params": {"position": 1}}]}])
     u = ra.understand(c, "put Zephyr second", fake)
     assert not u.steps and "Zephyr" in u.notes[0]
+
+
+def test_nouns_decide_the_scope():
+    c = ctx(last=["summary.text"])
+    # "this bullet" with nothing selected never silently edits the summary
+    u = ra.understand(c, "Make this bullet more natural", None)
+    assert not u.steps and "Which bullet" in u.question
+    c = ctx(selection=["experience.acme-labs.b1"])
+    assert ops_of(c, "Make this section shorter") == [("SHORTEN_TEXT", "section:section.1")]
+    assert ops_of(c, "Add more detail to this bullet") == [("EXPAND_TEXT", "selection:experience.acme-labs.b1")]
+
+
+def test_removing_a_named_project_removes_only_that_project():
+    c = ctx()
+    assert ops_of(c, "Drop the EventSphere project") == [("REMOVE_ENTRY", "projects.eventsphere")]
+    assert ops_of(c, "Remove the projects section") == [("REMOVE_SECTION", "section.2")]
+
+
+def test_use_only_n_projects_keeps_the_first_n():
+    c = ctx()
+    u = ra.understand(c, "Use only two projects", None)
+    assert [(s.op, s.target, s.params) for s in u.steps] == [("LIMIT_ENTRIES", "section.2", {"n": 2})]
+    ops, _ = ra.structural_ops(c, u.steps[0])
+    assert ops == [{"op": "remove_entry", "id": "projects.resolve"}]

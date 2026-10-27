@@ -30,6 +30,7 @@ automation = ["playwright>=1.49"]
 
 [project.scripts]
 careerpilot-runner = "app.automation.runner:main"
+careerpilot-admin = "app.admin:main"
 
 [dependency-groups]
 dev = [
@@ -67,3 +68,4 @@ ignore = ["S101", "B008", "S311"]
 # Embedded page scripts/HTML, and best-effort probes of third-party pages that must not abort a run
 "app/automation/**" = ["E501", "S110", "S112", "SIM105", "S603", "S607"]
 "tests/support/**" = ["E501"]
+"tests/test_analysis.py" = ["E501"]  # inline HTML fixtures

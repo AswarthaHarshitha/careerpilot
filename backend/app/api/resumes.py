@@ -128,16 +128,6 @@ def download_source(vid: int, user: User = Depends(current_user), db: Session = 
     raise AppError("This version has no source file.", code="no_source", status_code=404)
 
 
-class ContentIn(BaseModel):
-    content: dict
-
-
-@router.patch("/resumes/{vid}")
-def edit_version(vid: int, body: ContentIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    v = svc.update_content(db, svc.get_version(db, user.id, vid), body.content)
-    return version_out(v, full=True)
-
-
 def _require_export(v: ResumeVersion) -> None:
     if v.export_blocked:
         failing = [c["label"] for c in (v.quality_report or {}).get("checks", []) if c["status"] == "fail"]
@@ -156,16 +146,6 @@ class LengthIn(BaseModel):
 @router.post("/resumes/{vid}/resolve-length")
 def resolve_length(vid: int, body: LengthIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     return version_out(svc.resolve_length(db, svc.get_version(db, user.id, vid), body.option), full=True)
-
-
-class SectionIn(BaseModel):
-    section_index: int = Field(ge=0, le=50)
-
-
-@router.post("/resumes/{vid}/regenerate-section")
-def regenerate_section(vid: int, body: SectionIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    v = svc.regenerate_section(db, svc.get_version(db, user.id, vid), body.section_index)
-    return version_out(v, full=True)
 
 
 @router.post("/resumes/{vid}/duplicate")
