@@ -62,6 +62,7 @@ class TailorInputs:
     max_bullets_per_project: int = 3
     config: dict = field(default_factory=dict)  # effective job instructions (app.resume.instructions)
     guidance: list[str] = field(default_factory=list)  # free-text preferences from the user for the model
+    skill_names: dict[str, str] = field(default_factory=dict)  # canonical key -> the user's own spelling
 
 
 def relevance(text: str, focus: JobFocus) -> float:
@@ -476,8 +477,16 @@ def _tailor_skills(
     # section does not mention yet. A skill the user never claimed is not added.
     own = set(inputs.profile_skills)
     additions = [
-        k for k in focus.ordered if (k in inputs.strong_skills or k in own) and k not in listed_keys and k in SKILLS
+        k
+        for k in focus.ordered
+        if (k in inputs.strong_skills or k in own) and k not in listed_keys and (k in SKILLS or k in own)
     ]
+    listed_text = {it.strip().lower() for c in categories for it in c["items"]}
+
+    def shown(k: str) -> str:  # a skill outside the taxonomy keeps the user's spelling (AUTOSAR, not Autosar)
+        return inputs.skill_names.get(k) or display_name(k)
+
+    additions = [k for k in additions if shown(k).lower() not in listed_text]
     placed: set[str] = set()
     cat_targets = []
     for c in categories:
@@ -508,7 +517,7 @@ def _tailor_skills(
         for k in assigned.get(i, []):
             if k in placed:
                 continue
-            added.append(display_name(k))
+            added.append(shown(k))
             placed.add(k)
         new_items = ordered + added
         if relevant_only:

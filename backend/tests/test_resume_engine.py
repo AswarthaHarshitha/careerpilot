@@ -231,3 +231,22 @@ def test_skills_listed_in_profile_are_added_unclaimed_ones_are_not():
     assert "Docker" in out[1]["items"]  # no tools row, so it goes to the last one rather than being dropped
     assert not any("Kubernetes" in c["items"] for c in out)
     assert any(c["type"] == "added" for c in changes)
+
+
+def test_a_claimed_skill_outside_the_taxonomy_keeps_its_spelling():
+    from app.resume.tailor import JobFocus, TailorInputs, _tailor_skills
+
+    focus = JobFocus(weights={"x:autosar": 1.0}, ordered=["x:autosar"])
+    inputs = TailorInputs(
+        structure={},
+        focus=focus,
+        projects=[],
+        experiences=[],
+        profile_summary="",
+        profile_skills=["x:autosar"],
+        strong_skills=set(),
+        skill_names={"x:autosar": "AUTOSAR"},
+    )
+    cats = [{"name": "Languages", "items": ["C"]}, {"name": "Tools", "items": ["Git"]}]
+    out, _ = _tailor_skills(cats, inputs, focus)
+    assert out[1]["items"][-1] == "AUTOSAR" and "AUTOSAR" not in out[0]["items"]

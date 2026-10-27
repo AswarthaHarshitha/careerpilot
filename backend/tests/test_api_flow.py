@@ -220,3 +220,27 @@ def test_suggested_project_is_never_evidence_until_verified(auth_client):
     assert s["status"] == "idea" and "Kubernetes" in s["plan"]["coding_prompt"]
     assert c.get("/api/projects").json() == []  # a plan is not a project
     assert c.post(f"/api/jobs/{job_id}/suggested-projects", json={"gap_keys": ["rust"]}).status_code == 400
+
+
+def test_i_have_this_puts_the_skill_on_the_next_resume(auth_client):
+    c = auth_client
+    tpl = upload_template(c)
+    c.post(f"/api/templates/{tpl['id']}/import-profile")
+    r = c.post("/api/jobs", json={"description": SAMPLE_JD, "company": "Acme Tools", "role_title": "Backend Engineer"})
+    job_id = r.json()["job"]["id"]
+    run_tasks()
+
+    def source():
+        r = c.post(f"/api/jobs/{job_id}/resumes", json={})
+        run_tasks()
+        vid = c.get(f"/api/tasks/{r.json()['task_id']}").json()["result"]["resume_version_id"]
+        return c.get(f"/api/resumes/{vid}/source").content.decode()
+
+    assert "AWS" not in source()  # not claimed yet: never added
+    aws = next(r for r in c.get(f"/api/jobs/{job_id}").json()["requirements"] if r["canonical"] == "aws")
+    assert aws["match"]["status"] == "missing"
+    # what "I have this" on the job page does
+    assert c.post("/api/profile/skills", json={"name": aws["label"]}).status_code == 200
+    job = c.post(f"/api/jobs/{job_id}/rematch").json()
+    assert next(r for r in job["requirements"] if r["canonical"] == "aws")["match"]["status"] == "partial"
+    assert "AWS" in source()

@@ -576,12 +576,14 @@ def build_inputs(db: Session, job: Job, tpl: ResumeTemplate, cfg: dict | None = 
         )
     ]
     profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user_id))
+    skills = list(db.scalars(select(Skill).where(Skill.user_id == user_id)))
     return TailorInputs(
         structure=_structure(tpl),
         focus=focus,
         projects=projects,
         experiences=exps,
-        profile_skills=[s.canonical for s in db.scalars(select(Skill).where(Skill.user_id == user_id))],
+        profile_skills=[s.canonical for s in skills],
+        skill_names={s.canonical: s.name for s in skills},
         strong_skills=strong,
         profile_summary=profile.summary if profile else "",
         max_bullets_per_project=settings.max_bullets_per_project if settings else 3,
