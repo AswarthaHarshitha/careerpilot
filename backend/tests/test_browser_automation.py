@@ -307,3 +307,15 @@ def test_dead_employer_pages_are_recognised():
     assert _dead_reason("https://x", "Sorry, the page you're looking for can't be found")
     assert _dead_reason("https://x", "Your session has timed out!")
     assert not _dead_reason("https://x", "Job ID 40412. Apply for the Associate role.")
+
+
+def test_birth_date_and_salary_answers():
+    from app.automation.fields import FieldInput, map_field
+
+    ctx = {"profile": {"salary_expectation": "4-6 LPA"}, "saved_answers": {"date_of_birth": ("1999-01-31", True)}}
+    m = map_field(FieldInput("1|a", "Date of Birth", "text"), ctx)
+    assert m.value == "31/01/1999" and m.status == "needs_confirmation"  # sensitive: confirmed every time
+    assert map_field(FieldInput("1|b", "DOB", "date"), ctx).value == "1999-01-31"
+    assert map_field(FieldInput("1|c", "Age", "text"), ctx).value == ""  # never derived from the birth date
+    m = map_field(FieldInput("1|d", "Expected CTC", "text"), ctx)
+    assert m.value == "4-6 LPA" and m.status == "needs_confirmation"  # adjusted per company

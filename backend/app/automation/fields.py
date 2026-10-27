@@ -97,7 +97,8 @@ SENSITIVE: list[tuple[str, re.Pattern]] = [
     ("veteran", re.compile(r"veteran|military|armed forces|protected veteran", re.I)),
     ("disability", re.compile(r"disabilit|handicap|impairment", re.I)),
     ("sexual_orientation", re.compile(r"sexual orientation|lgbt", re.I)),
-    ("age", re.compile(r"date of birth|\bdob\b|\bage\b|birth ?date", re.I)),
+    ("date_of_birth", re.compile(r"date of birth|\bdob\b|birth ?date|born on", re.I)),
+    ("age", re.compile(r"\bage\b", re.I)),
     ("religion", re.compile(r"religio|faith", re.I)),
     ("criminal", re.compile(r"criminal|convict|felony|background check", re.I)),
     ("marital", re.compile(r"marital", re.I)),
@@ -185,6 +186,14 @@ TEXT_ONLY_KEYS = {
 }
 
 
+def _date_for_field(value: str, input_type: str) -> str:
+    """Saved dates are ISO (1999-01-31): date pickers take that, text boxes get the dd/mm/yyyy form."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", value.strip())
+    if not m or input_type == "date":
+        return value
+    return f"{m.group(3)}/{m.group(2)}/{m.group(1)}"
+
+
 def _yes_no(v: bool | None) -> str:
     return "" if v is None else ("Yes" if v else "No")
 
@@ -248,6 +257,8 @@ def _map_field(f: FieldInput, ctx: dict) -> Mapped:
     if sensitive:
         if key in saved and saved[key][0]:
             value = saved[key][0]
+            if key == "date_of_birth":
+                value = _date_for_field(value, f.input_type)
             if f.options:
                 value = pick_option(value, f.options) or ""
             if value:
@@ -313,7 +324,11 @@ def _map_field(f: FieldInput, ctx: dict) -> Mapped:
         "state": p.get("state"),
         "postal_code": p.get("postal_code"),
     }
-    if key in simple and simple[key]:
+    if key == "salary" and simple.get("salary"):
+        # the usual range is proposed, but salary is decided per company: always confirmed for this application
+        value, source, status = str(simple["salary"]), "profile", "needs_confirmation"
+        note = "Your usual expectation - adjust it for this company if needed, then confirm."
+    elif key in simple and simple[key]:
         value, source, status = str(simple[key]), "profile", "filled"
     elif key == "years_experience" and p.get("years_of_experience") is not None:
         value, source, status = f"{float(p['years_of_experience']):g}", "profile", "filled"

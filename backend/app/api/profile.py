@@ -439,10 +439,11 @@ ANSWER_KEYS = Literal[
     "veteran",
     "disability",
     "sexual_orientation",
+    "date_of_birth",
     "country",
     "custom",
 ]
-SENSITIVE_KEYS = {"gender", "race", "veteran", "disability", "sexual_orientation"}
+SENSITIVE_KEYS = {"gender", "race", "veteran", "disability", "sexual_orientation", "date_of_birth"}
 
 
 class AnswerIn(BaseModel):

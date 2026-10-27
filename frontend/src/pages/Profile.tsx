@@ -320,6 +320,7 @@ const ANSWER_OPTIONS: { key: string; label: string; sensitive?: boolean }[] = [
   { key: 'additional_info', label: 'Additional information' },
   { key: 'country', label: 'Country of residence' },
   { key: 'gender', label: 'Gender (self-identification)', sensitive: true },
+  { key: 'date_of_birth', label: 'Date of birth (YYYY-MM-DD)', sensitive: true },
   { key: 'race', label: 'Race / ethnicity (self-identification)', sensitive: true },
   { key: 'veteran', label: 'Veteran status (self-identification)', sensitive: true },
   { key: 'disability', label: 'Disability status (self-identification)', sensitive: true },
