@@ -289,3 +289,36 @@ def test_identical_requests_are_answered_from_the_cache(monkeypatch, client):
         router.provider_for(s).complete_json("rewrite", "text", temperature=0.4)
         router.provider_for(s).complete_json("rewrite", "text", temperature=0.4)
         assert sum("generateContent" in c for c in stub.calls) == 3
+
+
+def test_gemini_used_up_flash_quota_moves_to_lite_and_is_remembered(monkeypatch):
+    from app.llm.provider import LLMConfig, QuotaExceeded
+
+    monkeypatch.setattr(providers, "_quota_until", {})
+    monkeypatch.setattr(providers, "gemini_models", lambda key: ["gemini-flash-latest", "gemini-flash-lite-latest"])
+    calls = []
+
+    def call(self, model, *a):
+        calls.append(model)
+        if "lite" not in model:
+            raise QuotaExceeded("Gemini rate limit or quota reached.", 30)
+        return '{"ok": true}'
+
+    monkeypatch.setattr(providers.GeminiProvider, "_call", call)
+    p = providers.GeminiProvider(LLMConfig("gemini", "", "key-12345678"))
+    assert p._complete("s", "p", 100, 0.1) == '{"ok": true}'
+    assert p._complete("s", "p", 100, 0.1) == '{"ok": true}'
+    assert calls == ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-flash-lite-latest"]
+
+
+def test_background_work_prefers_lighter_gemini_models(monkeypatch):
+    from app.llm.provider import LLMConfig
+
+    monkeypatch.setattr(providers, "gemini_models", lambda key: ["gemini-flash-latest", "gemini-flash-lite-latest"])
+    p = providers.GeminiProvider(LLMConfig("gemini", "", "key-12345678"))
+    assert p.candidates()[0] == "gemini-flash-latest"
+    token = providers.prefer_light.set(True)
+    try:
+        assert p.candidates()[0] == "gemini-flash-lite-latest"
+    finally:
+        providers.prefer_light.reset(token)

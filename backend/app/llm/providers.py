@@ -5,6 +5,7 @@ each provider picks one from the provider's own current model list, and moves to
 the provider reports the model as gone.
 """
 
+import contextvars
 import logging
 import re
 import threading
@@ -120,11 +121,25 @@ def gemini_models(api_key: str, timeout: float = 15.0) -> list[str]:
             key=lambda n: [int(x) for x in re.findall(r"\d+", n)],
             reverse=True,
         )
+        lite = sorted(
+            (n for n in names if re.fullmatch(r"gemini-\d+(\.\d+)?-flash-lite", n)),
+            key=lambda n: [int(x) for x in re.findall(r"\d+", n)],
+            reverse=True,
+        )
         ordered = [n for n in ("gemini-flash-latest",) if n in names] + numbered
-        ordered += [n for n in ("gemini-flash-lite-latest",) if n in names]
+        ordered += [n for n in ("gemini-flash-lite-latest",) if n in names] + lite
         return ordered
 
     return _cached("gemini:" + api_key[-8:], load)
+
+
+# Free-tier quotas are per model: Flash can be used up (20 requests a day on some keys) while the lighter models
+# still answer. A model that hit its quota is skipped until this time instead of being retried on every call.
+_quota_until: dict[str, float] = {}
+QUOTA_COOLDOWN = 300.0  # a used-up daily quota then costs one quick refusal every five minutes
+# Set for background work nobody is waiting on (GitHub scans, interview prep): it uses the lighter models first and
+# leaves the Flash quota for resumes and job analysis.
+prefer_light = contextvars.ContextVar("prefer_light", default=False)
 
 
 class GeminiProvider(LLMProvider):
@@ -139,18 +154,29 @@ class GeminiProvider(LLMProvider):
             raise ProviderUnavailable(f"Could not reach Gemini ({type(exc).__name__}).") from exc
         if not found:
             raise ModelUnavailable("Gemini lists no text model for this API key.")
-        # The best Flash model, then the lighter model, which is usually available when Flash is overloaded.
-        lite = [n for n in found if "lite" in n]
-        return list(dict.fromkeys([found[0], *(found[1:2] if not lite else []), *lite[:1]]))
+        # The best Flash model, then up to two lighter models, which have their own quota and are usually available
+        # when Flash is overloaded or used up.
+        lite = [n for n in found if "lite" in n][:2]
+        full = [found[0], *(found[1:2] if not lite else [])]
+        ordered = [*lite, *full] if prefer_light.get() else [*full, *lite]
+        return list(dict.fromkeys(ordered))
 
     def _complete(self, system, prompt, max_tokens, temperature):
         last: LLMError | None = None
-        for model in self.candidates():
+        key = self.cfg.api_key[-8:]
+        now = time.time()
+        models = self.candidates()
+        usable = [m for m in models if _quota_until.get(f"{key}:{m}", 0) <= now] or models
+        for model in usable:
             try:
                 return self._call(model, system, prompt, max_tokens, temperature)
+            except QuotaExceeded as exc:  # this model's quota; a lighter model has its own
+                last = exc
+                _quota_until[f"{key}:{model}"] = now + max(exc.retry_after or 0, QUOTA_COOLDOWN)
+                log.info("Gemini %s quota reached; trying the next model", model)
             except ModelUnavailable as exc:
                 last = exc
-                forget_models("gemini:" + self.cfg.api_key[-8:])
+                forget_models("gemini:" + key)
             except ProviderUnavailable as exc:  # overloaded model: another model of the same provider may answer
                 last = exc
         raise last or ModelUnavailable("No usable Gemini model.")

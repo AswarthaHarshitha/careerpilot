@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import session_factory
 from app.core.errors import AppError
+from app.llm.providers import prefer_light
 from app.models import BackgroundTask
 
 log = logging.getLogger(__name__)
@@ -87,12 +88,15 @@ class TaskContext:
     @contextmanager
     def step(self, label: str):
         self._set_step(label, "running")
+        started = time.monotonic()
         try:
             yield
         except Exception:
             self.db.rollback()
             self._set_step(label, "failed")
             raise
+        finally:
+            log.info("task %s %s: %s %.1fs", self.task.id, self.task.kind, label, time.monotonic() - started)
         self._set_step(label, "done")
 
     def note(self, label: str, detail: str) -> None:
@@ -134,7 +138,11 @@ def run_task(db: Session, task: BackgroundTask) -> None:
     try:
         if handler is None:
             raise AppError(f"Unknown task type {task.kind}.")
-        result = handler(ctx) or {}
+        light = prefer_light.set(task.kind in BACKGROUND_KINDS)
+        try:
+            result = handler(ctx) or {}
+        finally:
+            prefer_light.reset(light)
         task.status = "succeeded"
         task.result = result
         task.error = ""
