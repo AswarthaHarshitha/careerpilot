@@ -377,8 +377,11 @@ def _parse_html(html: str, page_url: str, platform: str) -> RawPosting:
     if not post.company:
         post.company = meta["site_name"]
     post.company = post.company.replace("\xa0", " ").strip()
+    if post.job_code.startswith(("http://", "https://")):
+        post.job_code = ""  # a site's page link, not a requisition number
     if aggregator:
         post.from_aggregator = True
+        _listing_overview(post)
         site_key = re.sub(r"[^a-z0-9]", "", (meta["site_name"] or site_host.split(".")[0]).lower())
         if site_key and re.sub(r"[^a-z0-9]", "", post.company.lower()) in (site_key, ""):
             post.company = ""  # the listing site, not the employer
@@ -397,6 +400,70 @@ def _parse_html(html: str, page_url: str, platform: str) -> RawPosting:
         return post
     post.application_url = post.application_url or _find_apply_link(soup, page_url) or page_url
     return post
+
+
+_OVERVIEW = re.compile(
+    r"^\s*[-*\u2022]?\s*(job title|role|designation|position|job locations?|locations?|company(?: name)?|"
+    r"application deadline|last date(?: to apply)?|apply before|deadline)\s*[:\-\u2013]\s*(.+?)\s*$",
+    re.I | re.M,
+)
+
+
+def _listing_overview(post: RawPosting) -> None:
+    """Listing sites put the real facts in a "Job Overview" list; their page titles are headlines.
+
+    "KPIT Superset Biggest Hiring For Freshers Last Few Hours Left Only" becomes "Associate Engineer", and the
+    deadline the listing states replaces the site's structured-data date, which is often just a template default.
+    """
+    found: dict[str, str] = {}
+    for m in _OVERVIEW.finditer(post.description_text):
+        key = m.group(1).lower()
+        key = (
+            "title"
+            if key in ("job title", "role", "designation", "position")
+            else "location"
+            if key.startswith(("job location", "location"))
+            else "company"
+            if key.startswith("company")
+            else "deadline"
+        )
+        found.setdefault(key, m.group(2).strip().rstrip("."))
+    title = found.get("title", "")
+    if 2 <= len(title) <= 80 and not re.search(r"not mentioned|n/?a\b", title, re.I):
+        post.title = title
+    loc = found.get("location", "")
+    if not post.location and 2 <= len(loc) <= 120:
+        post.location = re.sub(r"\s+and\s+", ", ", loc)
+    company = found.get("company", "")
+    if not post.company and 2 <= len(company) <= 80:
+        post.company = company
+    when = _written_date(found.get("deadline", ""))
+    if when:
+        post.deadline = when
+        post.deadline_source = f"Listing says: apply by {found['deadline']}"
+
+
+def _written_date(text: str) -> date | None:
+    """'27 October 2026 at 10:00 PM', 'October 27, 2026', '27/10/2026' or '2026-10-27'."""
+    text = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", text.replace(",", " "))
+    m = re.search(r"(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})|([A-Za-z]{3,9})\s+(\d{1,2})\s+(\d{4})", text)
+    if m:
+        day, month, year = (m.group(1), m.group(2), m.group(3)) if m.group(1) else (m.group(5), m.group(4), m.group(6))
+        for fmt in ("%d %B %Y", "%d %b %Y"):
+            try:
+                return datetime.strptime(f"{day} {month} {year}", fmt).date()
+            except ValueError:
+                continue
+        return None
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})|(\d{1,2})[/.](\d{1,2})[/.](\d{4})", text)
+    try:
+        if m and m.group(1):
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if m:
+            return date(int(m.group(6)), int(m.group(5)), int(m.group(4)))  # Indian listings write day/month/year
+    except ValueError:
+        return None
+    return None
 
 
 # --- Oracle Recruiting Cloud (Oracle HCM Candidate Experience) ------------------------------------

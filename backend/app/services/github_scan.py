@@ -182,7 +182,7 @@ def enrich_with_llm(db: Session, project: Project, settings: UserSettings) -> No
         "README", project.readme_excerpt, 8000
     )
     try:
-        data = provider.complete_json(LLM_SYSTEM, prompt, max_tokens=1200)
+        data = provider.complete_json(LLM_SYSTEM, prompt, max_tokens=3000)
     except LLMError as exc:
         log.info("LLM enrichment skipped for project %s: %s", project.id, exc)
         return

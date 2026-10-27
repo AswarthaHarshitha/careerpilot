@@ -256,3 +256,31 @@ def test_non_job_pages_are_rejected(auth_client):
     run_tasks()
     job = auth_client.get(f"/api/jobs/{r.json()['job']['id']}").json()
     assert job["analysis_state"] == "failed" and "doesn't look like a job posting" in job["analysis_error"]
+
+
+def test_listing_overview_gives_real_title_location_and_deadline():
+    from app.jobs.platforms import RawPosting, _listing_overview
+
+    post = RawPosting(platform="company_site", job_url="https://listing.example/job/1")
+    post.title = "Acme Biggest Hiring For Freshers Last Few Hours Left Only"
+    post.description_text = (
+        "## Job Overview\n- Company: Acme Systems\n- Job Title: Associate Engineer\n"
+        "- Job Locations: Pune and Bangalore\n- Application Deadline: 27 October 2026 at 10:00 PM\n"
+    )
+    _listing_overview(post)
+    assert post.title == "Associate Engineer"
+    assert post.location == "Pune, Bangalore"
+    assert post.company == "Acme Systems"
+    assert post.deadline.isoformat() == "2026-10-27"
+
+
+def test_campus_platform_link_is_the_employer_link():
+    from bs4 import BeautifulSoup
+
+    from app.jobs.aggregators import employer_links
+
+    html = """<a href="https://whatsapp.com/channel/x">Join Us</a>
+    <a href="https://tinyurl.com/abc">Direct Test Link Opportunities</a>
+    <a href="https://app.joinsuperset.com/join/#/signup/student?jp=1234">Acme Superset Hiring</a>"""
+    links = employer_links(BeautifulSoup(html, "html.parser"), "https://commonjobs.in/job/acme/", "Acme")
+    assert links == ["https://app.joinsuperset.com/join/#/signup/student?jp=1234"]

@@ -14,7 +14,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -26,6 +26,9 @@ log = logging.getLogger(__name__)
 
 Handler = Callable[["TaskContext"], dict | None]
 HANDLERS: dict[str, Handler] = {}
+# Work nobody is waiting on. It runs after anything the user asked for, so a job analysis never sits behind a
+# GitHub scan of many repositories.
+BACKGROUND_KINDS = ("github_scan_repo", "interview_prep", "company_research")
 MAX_ATTEMPTS = 3
 
 
@@ -104,7 +107,7 @@ def _claim_next(db: Session) -> BackgroundTask | None:
     stmt = (
         select(BackgroundTask)
         .where(BackgroundTask.status == "queued", BackgroundTask.created_at <= now)
-        .order_by(BackgroundTask.created_at)
+        .order_by(case((BackgroundTask.kind.in_(BACKGROUND_KINDS), 1), else_=0), BackgroundTask.created_at)
         .limit(1)
     )
     if not get_settings().is_sqlite:

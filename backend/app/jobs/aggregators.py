@@ -37,7 +37,10 @@ NOT_EMPLOYER = re.compile(
 ATS_HOSTS = re.compile(
     r"greenhouse\.io|lever\.co|ashbyhq\.com|smartrecruiters\.com|myworkdayjobs\.com|myworkdaysite\.com|workday\.com|"
     r"taleo\.net|oraclecloud\.com|successfactors|icims\.com|zohorecruit|darwinbox|keka\.com|recruitee\.com|"
-    r"freshteam|jobvite|bamboohr|breezy\.hr|teamtailor|personio|avature|eightfold|phenompeople|naukri\.com/job-listings",
+    r"freshteam|jobvite|bamboohr|breezy\.hr|teamtailor|personio|avature|eightfold|phenompeople|naukri\.com/job-listings|"
+    # campus and fresher hiring platforms Indian employers use for drives
+    r"joinsuperset\.com|unstop\.com/(?:jobs|o|p)/|hirist\.|instahyre|cutshort|wellfound|hackerearth\.com/challenges/hiring|"
+    r"docs\.google\.com/forms|forms\.gle|forms\.office\.com",
     re.I,
 )
 APPLY_TEXT = re.compile(r"\b(apply|click|official|register|careers?|job link|link)\b", re.I)
@@ -75,12 +78,16 @@ def employer_links(soup: BeautifulSoup, page_url: str, company: str = "") -> lis
         if not host or host == site or host.endswith("." + site):
             continue
         text = a.get_text(" ", strip=True)
-        path = urlsplit(href).path + "?" + (urlsplit(href).query or "")
+        parts = urlsplit(href)
+        # single-page apps keep the route after "#" (app.joinsuperset.com/join/#/signup/student?jp=...)
+        path = parts.path + "?" + (parts.query or "") + parts.fragment
         score = 0
         if APPLY_TEXT.search(text):
             score += 3
         if any(t in host for t in tokens):
             score += 3
+        elif tokens and any(t in text.lower() for t in tokens):
+            score += 2  # the link is labelled with the employer's name
         if ATS_HOSTS.search(href):
             score += 3
         if JOB_PATH.search(path) and len(path) > 12:
