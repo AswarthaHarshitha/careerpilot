@@ -229,12 +229,12 @@ function FieldRow({ f, appId, locked, onUpdated, onError }: { f: AppField; appId
         </div>
         <div className="flex items-center gap-1.5">
           {f.value && PROVENANCE_LABEL[f.provenance] && <span className={cx('text-[11.5px]', f.provenance === 'AI_SUGGESTED' ? 'text-verify' : 'text-faint')}>{PROVENANCE_LABEL[f.provenance]}</span>}
-          <Badge tone={f.status === 'filled' || f.status === 'confirmed' ? 'strong' : f.status === 'skipped' ? 'neutral' : 'partial'}>
-            {f.status === 'needs_input' ? 'Needs your input' : f.status === 'needs_confirmation' ? 'Confirm' : f.status === 'confirmed' ? 'Confirmed' : f.status === 'skipped' ? 'Left blank' : f.fill_result === 'failed' ? 'Fill in browser' : 'Filled'}
+          <Badge tone={f.status === 'filled' || f.status === 'confirmed' ? 'strong' : f.status === 'skipped' || f.status === 'browser_only' ? 'neutral' : 'partial'}>
+            {f.status === 'needs_input' ? 'Needs your input' : f.status === 'needs_confirmation' ? 'Confirm' : f.status === 'confirmed' ? 'Confirmed' : f.status === 'browser_only' ? 'In the browser' : f.status === 'skipped' ? (f.note.startsWith('Kept') ? 'Kept as shown' : 'Left blank') : f.fill_result === 'failed' ? 'Fill in browser' : 'Filled'}
           </Badge>
         </div>
       </div>
-      {f.input_type !== 'file' && (
+      {f.input_type !== 'file' && f.status !== 'browser_only' && (
         <div className="mt-2 flex flex-wrap items-start gap-2">
           {f.field_key === 'consent' ? (
             <span className="text-[12.5px] text-ink-2">Accepting this is your decision.</span>

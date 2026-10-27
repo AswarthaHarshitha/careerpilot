@@ -296,8 +296,26 @@ def _with_employer_posting(listing: RawPosting) -> RawPosting:
     try:
         employer = fetch_posting(target) if detect_platform(target) != "generic" else _generic_once(target)
     except ExternalFetchError as exc:
+        if "HTTP 404" in exc.message or "HTTP 410" in exc.message or "not found" in exc.message.lower():
+            listing.notes.append(
+                "The employer's job page no longer exists (not found). This job has probably closed; check before "
+                "spending time on it. The listing's description is shown."
+            )
+        else:
+            listing.notes.append(
+                f"The employer's page could not be read ({exc.message}); the listing's description is used."
+            )
+        return listing
+    dead = re.search(
+        r"session (has )?(timed out|expired)|error\.aspx|page not found|no longer available|"
+        r"(job|position|posting) (has )?(expired|closed)",
+        employer.job_url + " " + employer.description_text[:2000],
+        re.I,
+    )
+    if dead:
         listing.notes.append(
-            f"The employer's page could not be read ({exc.message}); the listing's description is used."
+            f"The employer link from the listing doesn't work (the employer's site shows “{dead.group(0)}”). "
+            "Find the role on the employer's careers site and update the application link before applying."
         )
         return listing
     if employer.from_aggregator or len(employer.description_text) < max(300, len(listing.description_text) // 3):
@@ -305,7 +323,8 @@ def _with_employer_posting(listing: RawPosting) -> RawPosting:
         return listing
     employer.job_url = listing.job_url
     employer.company = employer.company or listing.company
-    employer.title = employer.title or listing.title
+    if listing.title and (not employer.title or len(employer.title.split()) <= 2):
+        employer.title = listing.title  # employer pages sometimes title the role with a single word
     employer.location = employer.location or listing.location
     employer.application_url = employer.application_url or target
     employer.notes = listing.notes + ["The description was read from the employer's own posting."] + employer.notes

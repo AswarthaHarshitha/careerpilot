@@ -285,3 +285,25 @@ def test_marking_an_application_done_closes_its_open_session(auth_client):
     auth_client.patch(f"/api/applications/{app_id}", json={"status": "withdrawn"})
     assert auth_client.get("/api/agent/status").json()["task"] is None
     assert auth_client.get(f"/api/applications/{app_id}").json()["session"]["state"] == "cancelled"
+
+
+def test_field_rules_from_real_employer_forms():
+    from app.automation.fields import FieldInput, classify, map_field
+
+    assert classify("Photo", "file") == ("", False)  # the resume never goes into a photo upload
+    assert classify("Resume", "file") == ("resume", False)
+    assert classify("First Name", "combobox") == ("", False)  # salutation picker in the name row
+    assert classify("First Name", "text")[0] == "first_name"
+    m = map_field(FieldInput("1|a", "CAPTCHA", "text", required=True), {"profile": {}})
+    assert m.status == "browser_only"  # typed by the person in the browser, never by CareerPilot
+    m = map_field(FieldInput("1|b", "Mobile", "combobox", required=True), {"profile": {}})
+    assert m.status == "skipped" and "part of the phone field" in m.note
+
+
+def test_dead_employer_pages_are_recognised():
+    from app.automation.runner import _dead_reason
+
+    assert _dead_reason("https://careers.example.com/error.aspx?x=1", "")
+    assert _dead_reason("https://x", "Sorry, the page you're looking for can't be found")
+    assert _dead_reason("https://x", "Your session has timed out!")
+    assert not _dead_reason("https://x", "Job ID 40412. Apply for the Associate role.")

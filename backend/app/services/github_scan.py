@@ -27,6 +27,8 @@ def slugify(name: str) -> str:
 
 def pretty_name(repo_name: str) -> str:
     """ "resolve-issue-platform" -> "Resolve Issue Platform" (the user can rename it)."""
+    if len(repo_name) <= 3 and repo_name.isalpha():
+        return repo_name.upper()  # "ci" -> "CI", "api" -> "API"
     words = re.split(r"[-_\s]+", repo_name)
     return " ".join(w if (w.isupper() or any(c.isupper() for c in w[1:])) else w.capitalize() for w in words if w)
 

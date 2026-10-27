@@ -23,10 +23,12 @@ import logging
 import os
 import platform
 import re
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -41,6 +43,27 @@ POLL_SECONDS = 2.0
 IDLE_POLL_SECONDS = 3.0
 MAX_PAGE_ERRORS = 3
 HOME = Path(os.environ.get("CAREERPILOT_HOME", Path.home() / ".careerpilot"))
+
+
+DEAD_PAGE = re.compile(
+    r"session (has )?(timed out|expired)|page (was )?not found|\b404\b\W{0,3}(error|not found|page)|error 404|"
+    r"no longer (available|accepting|active|open)|"
+    r"(job|position|posting|requisition|vacancy) (has )?(expired|closed|been filled|is no longer)|error\.aspx|"
+    r"this job is (closed|unavailable)|we couldn'?t find (that|the) (page|job)|(can'?t|cannot|could not) be found|"
+    r"page you('re| are) looking for|(doesn'?t|does not) exist",
+    re.I,
+)
+
+
+ACCOUNT_URL = re.compile(r"login|log-in|signin|sign-in|account|register|candidate/?(create|start)", re.I)
+ACCOUNT_TEXT = re.compile(r"enter your (information|email)|create (an |your )?(account|profile)|sign in to apply", re.I)
+
+
+def _dead_reason(url: str, body: str) -> str:
+    if DEAD_PAGE.search(url):
+        return "The employer's site redirected to an error page"
+    m = DEAD_PAGE.search((body or "")[:4000])
+    return f"The employer's page says “{m.group(0).strip()}”" if m else ""
 
 
 class SessionEnded(Exception):
@@ -217,6 +240,20 @@ class SessionRunner:
         B = self.B
         self.event("OPENING_PAGE", f"Opening the application page ({self.adapter.label})")
         ok, reason = B.goto(self.page, self.start_url)
+        if ok and reason.startswith(("blocked:", "gone:")):
+            code = reason.split(":")[1]
+            if reason.startswith("blocked:"):
+                msg = (
+                    f"The employer's site refused CareerPilot's browser (HTTP {code}). CareerPilot does not try to "
+                    "get around that. Open the job link yourself and apply manually. Nothing was filled."
+                )
+            else:
+                msg = (
+                    f"The employer's job page no longer exists (HTTP {code}); the job has probably closed. "
+                    "Nothing was filled."
+                )
+            self.report("unsupported", msg, phase="BLOCKED")
+            return "unsupported"
         if not ok:
             self.report(
                 "failed", f"Could not open the application page: {reason}. Nothing was submitted.", phase="FAILED"
@@ -322,6 +359,16 @@ class SessionRunner:
                 self.resume_nonce = ins["resume_nonce"]
                 announced = None
                 empty_polls = 0
+            dead = _dead_reason(self.page.url, self._body())
+            if dead:
+                self.report(
+                    "unsupported",
+                    f"{dead}, so this link no longer works (the job may have closed, or the link was tied to someone "
+                    "else's session). Find the role on the employer's careers site and update the application link. "
+                    "Nothing was filled.",
+                    phase="BLOCKED",
+                )
+                return False
             obstacle = B.detect_obstacle(self.page)
             if obstacle:
                 if announced != obstacle:
@@ -338,12 +385,47 @@ class SessionRunner:
                 if f.data["input_type"]
                 in ("text", "email", "tel", "file", "textarea", "select", "radio", "combobox", "url")
             ]
-            if len(meaningful) >= 2:
+            strong = any(
+                f.data["input_type"] in ("file", "email") or "mail" in f.data["label"].lower() for f in meaningful
+            )
+            seen_here = self.adapters.adapter_for(self.page.url)
+            if seen_here is not self.adapters.GENERIC and seen_here is not self.adapter:
+                self.adapter = seen_here  # e.g. the company page handed over to its iCIMS or Workday portal
+                self.event("INSPECTING_PAGE", f"The application continues on {seen_here.label}")
+            account_step = (
+                1 <= len(meaningful) <= 2
+                and any(f.data["input_type"] == "email" or "mail" in f.data["label"].lower() for f in meaningful)
+                and not any(f.data["input_type"] == "file" for f in meaningful)
+                and (ACCOUNT_URL.search(self.page.url) or ACCOUNT_TEXT.search(self._body()[:3000]))
+            )
+            if account_step:
+                note = (
+                    f"{self.adapter.label if self.adapter is not self.adapters.GENERIC else 'This site'} starts with "
+                    "an account step (your email, and possibly a privacy consent). Complete it in the browser window; "
+                    "CareerPilot continues when the application form appears."
+                )
+                if announced != note:
+                    self.wait_for_user(note)
+                    announced = note
+                time.sleep(POLL_SECONDS)
+                continue
+            if len(meaningful) >= 3 or (len(meaningful) >= 2 and strong):
                 self.event("INSPECTING_PAGE", "Application form detected")
                 return True
+            before = list(self.page.context.pages)
             if apply_clicks < 3 and B.click_apply(self.page, self.adapter.apply_text):
                 apply_clicks += 1
-                self.event("OPENING_PAGE", "Opened the application form")
+                opened = [p for p in self.page.context.pages if p not in before]
+                if opened:  # the site opened the application in a new tab: continue there
+                    self.page = opened[-1]
+                    self.page.on("dialog", lambda d: d.dismiss())
+                    try:
+                        self.page.wait_for_load_state("domcontentloaded", timeout=20000)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self.event("OPENING_PAGE", "The application form opened in a new tab")
+                else:
+                    self.event("OPENING_PAGE", "Opened the application form")
                 continue
             empty_polls += 1
             if announced is None and empty_polls >= 6:
@@ -351,12 +433,19 @@ class SessionRunner:
                     self.wait_for_user(self.adapter.note)
                     announced = self.adapter.note
                     continue
-                self.report(
-                    "unsupported",
-                    "No application form was found on this page. The site may use a portal CareerPilot cannot "
-                    "read. Open the job and apply manually.",
-                    phase="BLOCKED",
-                )
+                dead = _dead_reason(self.page.url, self._body())
+                if dead:
+                    msg = (
+                        f"{dead}, so this link no longer works (the job may have closed, or the link was tied to "
+                        "someone else's session). Find the role on the employer's careers site and update the "
+                        "application link."
+                    )
+                else:
+                    msg = (
+                        "No application form was found on this page. The site may use a portal CareerPilot cannot "
+                        "read, or block automated browsers. Open the job and apply manually."
+                    )
+                self.report("unsupported", msg, phase="BLOCKED")
                 return False
             time.sleep(POLL_SECONDS)
         self.report("failed", "Stopped waiting: the page never reached an application form.", phase="FAILED")
@@ -381,6 +470,7 @@ class SessionRunner:
                 "input_type": f.data["input_type"],
                 "required": f.data.get("required", False),
                 "options": f.data.get("options", []),
+                "has_value": bool(f.data.get("has_value")),
             }
             for f in found
         ]
@@ -601,6 +691,14 @@ class SessionRunner:
             return ""
 
 
+_STOPPING = threading.Event()
+
+
+def _on_stop(signum, frame) -> None:
+    _STOPPING.set()
+    raise KeyboardInterrupt
+
+
 def _window_closed(exc: Exception, page) -> bool:
     try:
         if page.is_closed():
@@ -669,6 +767,8 @@ def run_loop(
                     log.error("%s", exc)
                     state = "failed"
                 except Exception as exc:  # noqa: BLE001
+                    if _STOPPING.is_set():
+                        break  # the runner itself is shutting down: the session resumes when it starts again
                     closed = _window_closed(exc, page)
                     log.error("Session %s %s: %s", session["session_id"], "stopped" if closed else "failed", exc)
                     try:
@@ -858,6 +958,7 @@ def main(argv: list[str] | None = None) -> int:
         save_config(api_url, token)
         print(install_service())
         return 0
+    signal.signal(signal.SIGTERM, _on_stop)  # service stop/restart: leave sessions to be resumed, not cancelled
     log.info("Connected as %s. Waiting for applications (Ctrl+C to stop)...", who["user"])
     api.heartbeat("idle", "Ready")
     try:

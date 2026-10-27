@@ -55,6 +55,28 @@ INSPECT_JS = r"""
       const legend = box.querySelector('legend, label, .label, [class*="label"]');
       if (legend && clean(legend.innerText)) return clean(legend.innerText);
     }
+    // Component frameworks often put the visible label in a sibling of the input's wrapper.
+    const skip = /^(clear|add|remove|upload|browse|-+\s*none\s*-+|select|\(?\+\d+\)?)$/i;
+    let n = el;
+    for (let i = 0; i < 7 && n; i++) {  // first pass: a label element (or label-classed) beside an ancestor
+      for (let sib = n.previousElementSibling; sib; sib = sib.previousElementSibling) {
+        const isLabel = sib.tagName === 'LABEL' || /label|caption|title/i.test(String(sib.className));
+        const t = clean(sib.innerText);
+        if (isLabel && t && t.length <= 80 && !skip.test(t)) return t;
+      }
+      n = n.parentElement;
+    }
+    n = el;
+    for (let i = 0; i < 4 && n; i++) {  // second pass: the nearest short text just before the field
+      let sib = n.previousElementSibling;
+      while (sib) {
+        const t = clean(sib.innerText);
+        if (t && t.length <= 80 && !skip.test(t)) return t;
+        if (t) break;
+        sib = sib.previousElementSibling;
+      }
+      n = n.parentElement;
+    }
     return clean(el.getAttribute('placeholder') || el.getAttribute('name') || el.id || '');
   };
   let n = 0;
@@ -230,6 +252,10 @@ def goto(page: Page, url: str, attempts: int = 3) -> tuple[bool, str]:
     for i in range(attempts):
         try:
             resp = page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            if resp is not None and resp.status in (401, 403, 429):
+                return True, f"blocked:{resp.status}"  # the page loaded, but the site refused the automated browser
+            if resp is not None and resp.status in (404, 410):
+                return True, f"gone:{resp.status}"
             if resp is None or resp.status < 500:
                 return True, ""
             reason = f"the site answered HTTP {resp.status}"
@@ -241,7 +267,48 @@ def goto(page: Page, url: str, attempts: int = 3) -> tuple[bool, str]:
     return False, reason
 
 
+COOKIE_REJECT = re.compile(
+    r"^\s*(decline( all| non-essential| optional)?( cookies)?|reject( all)?( cookies)?|(use )?(only )?(strictly )?"
+    r"(necessary|essential)( cookies)?( only)?|continue without accepting)\s*$",
+    re.I,
+)
+COOKIE_ACCEPT = re.compile(r"^\s*(accept( all)?( cookies)?|allow( all)?( cookies)?|i agree|agree|got it|ok)\s*$", re.I)
+
+
+def dismiss_cookie_banner(page: Page) -> bool:
+    """Cookie banners cover buttons. Choose the privacy-preserving option when one is offered."""
+    for rx in (COOKIE_REJECT, COOKIE_ACCEPT):
+        hit = find_button(page, rx)
+        if hit:
+            f, b = hit
+            try:
+                f.locator(f'[data-cp-btn="{b["ref"]}"]').first.click(timeout=3000)
+                page.wait_for_timeout(500)
+                return True
+            except Exception:  # noqa: BLE001
+                continue
+    return False
+
+
+def _click(page: Page, frame: Frame, ref: str) -> bool:
+    loc = frame.locator(f'[data-cp-btn="{ref}"]').first
+    for attempt in range(3):
+        try:
+            if attempt == 0:
+                loc.click(timeout=5000)
+            elif attempt == 1:
+                dismiss_cookie_banner(page)
+                loc.click(timeout=5000)
+            else:
+                loc.evaluate("el => el.click()")  # an overlay still intercepts the pointer
+            return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
 def click_apply(page: Page, extra: tuple[str, ...] = ()) -> bool:
+    dismiss_cookie_banner(page)
     hit = find_button(page, APPLY_TEXT)
     if not hit and extra:
         rx = re.compile(r"^\s*(" + "|".join(re.escape(t) for t in extra) + r")\s*$", re.I)
@@ -249,13 +316,14 @@ def click_apply(page: Page, extra: tuple[str, ...] = ()) -> bool:
     if not hit:
         return False
     f, b = hit
-    try:
-        f.locator(f'[data-cp-btn="{b["ref"]}"]').first.click(timeout=5000)
-        page.wait_for_load_state("domcontentloaded", timeout=15000)
-        page.wait_for_timeout(1500)
-        return True
-    except PWTimeout:
+    if not _click(page, f, b["ref"]):
         return False
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
+    except PWTimeout:
+        pass
+    page.wait_for_timeout(1500)
+    return True
 
 
 def _frame_for(page: Page, ref: str) -> tuple[Frame | None, str]:

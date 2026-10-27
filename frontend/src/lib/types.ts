@@ -309,7 +309,7 @@ export type AppField = {
   sensitive: boolean
   value: string
   value_source: string
-  status: 'filled' | 'needs_input' | 'needs_confirmation' | 'confirmed' | 'skipped' | 'unsupported'
+  status: 'filled' | 'needs_input' | 'needs_confirmation' | 'confirmed' | 'skipped' | 'unsupported' | 'browser_only'
   note: string
   fill_result: string
   validation_message: string

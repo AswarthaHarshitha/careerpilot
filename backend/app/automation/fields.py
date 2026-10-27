@@ -113,6 +113,7 @@ class FieldInput:
     required: bool = False
     options: list[str] | None = None
     step: int = 0
+    has_value: bool = False  # the page already shows a value (a default such as a country code)
 
 
 @dataclass
@@ -131,8 +132,13 @@ def normalise_label(label: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+CAPTCHA_LABEL = re.compile(r"captcha|image text|characters (shown|in the image)|verification code|security code", re.I)
+
+
 def classify(label: str, input_type: str) -> tuple[str, bool]:
     text = normalise_label(label)
+    if CAPTCHA_LABEL.search(text):
+        return "captcha", False
     for key, rx in SENSITIVE:
         if rx.search(text):
             return key, True
@@ -141,13 +147,36 @@ def classify(label: str, input_type: str) -> tuple[str, bool]:
     if input_type == "file":
         if re.search(r"cover", text, re.I):
             return "cover_letter", False
-        return "resume", False
+        if re.search(
+            r"photo|picture|image|avatar|headshot|selfie|signature|id proof|aadhaar|passport|pan card", text, re.I
+        ):
+            return "", False  # never put the resume into a photo or document upload
+        if re.search(r"resume|cv|curriculum|biodata", text, re.I) or re.fullmatch(
+            r"\(unlabelled field\)|upload|attach\w*|file|document|browse", text.strip(), re.I
+        ):
+            return "resume", False
+        return "", False
     for key, rx in PATTERNS:
         if rx.search(text):
             if key == "full_name" and re.search(r"first|last|company|school|university|preferred", text, re.I):
                 continue
+            if key in TEXT_ONLY_KEYS and input_type not in ("text", "email", "tel", "url", "textarea", "number", ""):
+                continue  # e.g. a title/salutation dropdown sitting in the "First Name" row
             return key, False
     return "", False
+
+
+TEXT_ONLY_KEYS = {
+    "first_name",
+    "last_name",
+    "preferred_name",
+    "full_name",
+    "email",
+    "phone",
+    "linkedin",
+    "github",
+    "portfolio",
+}
 
 
 def _yes_no(v: bool | None) -> str:
@@ -176,6 +205,36 @@ def pick_option(value: str, options: list[str]) -> str | None:
 
 def map_field(f: FieldInput, ctx: dict) -> Mapped:
     """ctx keys: profile (dict of values), saved_answers {key: (answer, sensitive)}, resume_version_id, draft_fn."""
+    if classify(f.label, f.input_type)[0] == "captcha":
+        return Mapped(
+            "captcha",
+            "",
+            "none",
+            "browser_only",
+            False,
+            "A CAPTCHA: type it in the browser window. CareerPilot never fills it.",
+        )
+    m = _map_field(f, ctx)
+    if m.status == "needs_input" and not m.sensitive and not m.field_key and f.input_type in ("select", "combobox"):
+        text = normalise_label(f.label)
+        part_of = next((k for k, rx in PATTERNS if k in TEXT_ONLY_KEYS and rx.search(text)), None)
+        if part_of:
+            # e.g. the country-code or salutation picker inside the phone or name row
+            return Mapped(
+                "",
+                "",
+                "none",
+                "skipped",
+                False,
+                f"Kept what the page already shows (part of the {part_of.replace('_', ' ')} field).",
+            )
+    if m.status == "needs_input" and not m.sensitive and not m.field_key and f.has_value:
+        # nothing to say about it, and the page already holds a value: leave the page's choice alone
+        return Mapped("", "", "none", "skipped", False, "Kept what the page already shows.")
+    return m
+
+
+def _map_field(f: FieldInput, ctx: dict) -> Mapped:
     key, sensitive = classify(f.label, f.input_type)
     p = ctx.get("profile", {})
     saved = ctx.get("saved_answers", {})

@@ -406,6 +406,11 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
         "resume_label": rv.label if rv else "",
         "draft_fn": _draft_fn(db, a),
     }
+    pickers = {
+        (str(raw.get("label", ""))[:1000], int(raw.get("step", 0))): True
+        for raw in fields
+        if str(raw.get("input_type")) in ("select", "combobox")
+    }
     existing = {f.field_ref: f for f in a.fields}
     # After a page reload or a runner restart the same fields come back with new references.
     by_shape = {(f.label, f.input_type, f.step): f for f in a.fields}
@@ -421,6 +426,7 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
             required=bool(raw.get("required")),
             options=[str(o)[:200] for o in (raw.get("options") or [])][:200],
             step=int(raw.get("step", 0)),
+            has_value=bool(raw.get("has_value")),
         )
         same = by_shape.get((fi.label, fi.input_type, fi.step))
         if ref not in existing and same is not None:
@@ -438,6 +444,9 @@ def ingest_fields(db: Session, s: AutomationSession, fields: list[dict]) -> None
             db.add(f)
             a.fields.append(f)
         m = map_field(fi, ctx)
+        if m.field_key == "phone" and m.value and pickers.get((fi.label, fi.step)):
+            # the form has its own country-code picker beside this box: enter the national number only
+            m.value = re.sub(r"^\s*(\+\d{1,3}|00\d{1,3})[\s-]*", "", m.value)
         f.label, f.input_type, f.required, f.options, f.step = (
             fi.label,
             fi.input_type,
