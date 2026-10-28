@@ -2,6 +2,8 @@
 
 A personal job-application workspace. Paste a job link. CareerPilot reads the job and compares it with your verified experience and GitHub work. It then produces a tailored resume in your own template, keeps every claim traceable to evidence, and fills the application form in a browser you can see. Nothing is submitted until you confirm it.
 
+**Live:** [careerpilot-hazel.vercel.app](https://careerpilot-hazel.vercel.app) · Built by [Sugreevu Aswartha Harshitha](https://harshitha-portfolio-inky.vercel.app)
+
 ## The problem
 
 Tailoring a resume for every application is slow, and the usual shortcuts create new problems:
