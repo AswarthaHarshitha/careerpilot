@@ -195,6 +195,74 @@ def language_checks(content: dict, jd_text: str, sources: list[str]) -> list[Che
     if cp:
         copied.review("Rewrite these in your own words; keep only the necessary technical terms.", cp)
     checks.append(copied)
+    checks += structure_checks(content)
+    return checks
+
+
+PROFILE_LINK = re.compile(r"^https?://(www\.)?github\.com/[A-Za-z0-9-]+/?$", re.I)
+
+
+def structure_checks(content: dict) -> list[Check]:
+    """What a recruiter notices at a glance: the same work listed twice, a project linking to a GitHub profile
+    instead of its code, a project without the tech line the others have."""
+    entries = [
+        (s, e)
+        for s in content.get("sections", [])
+        if not s.get("removed")
+        for e in s.get("entries") or []
+        if e.get("bullets")
+    ]
+    checks = []
+
+    dup = Check("duplicate_work", "Each piece of work listed once")
+    grams = []
+    for s, e in entries:
+        text = " ".join(b["text"] for b in e["bullets"] if not b.get("tech_line"))
+        words = [w for w in re.findall(r"[a-z0-9+#.]+", text.lower()) if len(w) > 3]
+        grams.append(
+            (
+                e.get("fields", {}).get("primary", "") or s["title"],
+                {tuple(words[i : i + 3]) for i in range(len(words) - 2)},
+            )
+        )
+    found = []
+    for i, (a, ga) in enumerate(grams):
+        for b, gb in grams[i + 1 :]:
+            if len(ga & gb) >= 3:
+                found.append(f"{a} and {b} describe the same work")
+    if found:
+        dup.review("The same work appears twice. Describe each entry from its own material.", found)
+    checks.append(dup)
+
+    projects = [e for s, e in entries if s.get("kind") == "projects"]
+    links = Check("project_links", "Project links open the project")
+    bare = [
+        e["fields"].get("primary", "") for e in projects if PROFILE_LINK.match(e.get("fields", {}).get("url") or "")
+    ]
+    if bare:
+        links.review("These link to your GitHub profile, not the repository. Link the repository.", bare)
+    checks.append(links)
+
+    titles = Check("project_titles", "Project titles say what was built")
+    short = [
+        t
+        for t in (e.get("fields", {}).get("primary", "") for e in projects)
+        if t and (len(t.strip()) <= 3 or re.fullmatch(r"[a-z0-9]+(?:[-_][a-z0-9]+)+", t.strip()))
+    ]
+    if short:
+        titles.review(
+            "These read as repository names. Rename them in Projects to what they are (for example "
+            "“Spring Boot REST API with CI”).",
+            short,
+        )
+    checks.append(titles)
+
+    tech = Check("project_tech", "Every project lists its technologies")
+    with_line = [e for e in projects if any(b.get("tech_line") for b in e["bullets"])]
+    missing = [e["fields"].get("primary", "") for e in projects if with_line and e not in with_line]
+    if missing:
+        tech.review("Other projects have a Technologies line; these do not.", missing)
+    checks.append(tech)
     return checks
 
 

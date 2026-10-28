@@ -65,6 +65,9 @@ def _render_entry(src: str, base: dict, spec: dict, is_clone: bool, section: dic
                 reps.append((slots["url"][0], slots["url"][1], escape_url(url)))
             elif "link_call" in slots:
                 reps.append((slots["link_call"][0], slots["link_call"][1], ""))
+    elif spec.get("rewrite_url") and "url" in slots and fields.get("url"):
+        # only the link changes (a project linked to the GitHub profile now links its repository)
+        reps.append((slots["url"][0], slots["url"][1], escape_url(fields["url"])))
 
     bullets = spec.get("bullets")
     if bullets is not None and base.get("items_region"):

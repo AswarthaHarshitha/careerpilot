@@ -250,3 +250,61 @@ def test_a_claimed_skill_outside_the_taxonomy_keeps_its_spelling():
     cats = [{"name": "Languages", "items": ["C"]}, {"name": "Tools", "items": ["Git"]}]
     out, _ = _tailor_skills(cats, inputs, focus)
     assert out[1]["items"][-1] == "AUTOSAR" and "AUTOSAR" not in out[0]["items"]
+
+
+def test_plain_verbs_replace_thesaurus_openers():
+    from app.resume.tailor import plain_verbs
+
+    assert plain_verbs("Formulated a Flask app for search.") == "Built a Flask app for search."
+    assert plain_verbs("Executed data processing in NumPy.") == "Performed data processing in NumPy."
+    assert plain_verbs("Built a Flask app.") == "Built a Flask app."
+
+
+def test_project_tech_line_falls_back_to_the_projects_own_words():
+    from app.resume.tailor import ProjectInput, _project_tech
+
+    p = ProjectInput(1, "Tool", "", "A Flask service", [], set(), [], [], language="Python")
+    assert _project_tech(p, ["Built the API with FastAPI and PostgreSQL."]) == ["FastAPI", "PostgreSQL", "Flask"]
+    bare = ProjectInput(2, "Tool", "", "", [], set(), [], [], language="Go")
+    assert _project_tech(bare, ["Wrote a small tool."]) == ["Go"]
+
+
+def test_spellings_follow_the_template_without_breaking_grammar():
+    from app.resume.tailor import _respell
+
+    spellings = {"react": "React.js", "rest": "REST APIs"}
+    assert _respell("Built a REST API in React", spellings) == "Built a REST API in React.js"
+
+
+def test_structure_checks_catch_duplicates_profile_links_titles_and_missing_tech():
+    from app.resume.quality import structure_checks
+
+    leave = "Developed an employee leave management system with role-based approvals"
+    content = {
+        "sections": [
+            {
+                "title": "Experience",
+                "kind": "experience",
+                "entries": [{"fields": {"primary": "MIC College"}, "bullets": [{"text": leave}]}],
+            },
+            {
+                "title": "Projects",
+                "kind": "projects",
+                "entries": [
+                    {
+                        "fields": {"primary": "EventSphere", "url": "https://github.com/someone/"},
+                        "bullets": [{"text": leave}, {"text": "Technologies: React", "tech_line": True}],
+                    },
+                    {
+                        "fields": {"primary": "Ci", "url": "https://github.com/someone/ci"},
+                        "bullets": [{"text": "Wrote a Spring Boot API with tests."}],
+                    },
+                ],
+            },
+        ]
+    }
+    by_id = {c.id: c for c in structure_checks(content)}
+    assert by_id["duplicate_work"].status == "review"
+    assert by_id["project_links"].items == ["EventSphere"]
+    assert by_id["project_titles"].items == ["Ci"]
+    assert by_id["project_tech"].items == ["Ci"]

@@ -23,6 +23,7 @@ from app.llm.provider import LLMError, LLMProvider, wrap_untrusted
 from app.matching.taxonomy import display_name, find_skills
 from app.resume.assistant import LINK_WORDS, _match_entry, _norm, _sections_named
 from app.resume.document import index
+from app.resume.tailor import plain_verbs
 from app.resume.truth import allowed_skills_for, check_rewrite
 
 TEXT_OPS = ("EXPAND_TEXT", "SHORTEN_TEXT", "RESIZE_TEXT", "REWRITE_TEXT", "CHANGE_EMPHASIS", "UPDATE_TEXT")
@@ -715,6 +716,8 @@ def plan_text_edits(ctx: Context, step: Step, provider: LLMProvider | None) -> t
             if not isinstance(cand, str) or not cand.strip():
                 continue
             cand = re.sub(r"\s+", " ", cand).strip()
+            if el["type"] == "bullet" and cand.split(" ", 1)[0] != el["text"].split(" ", 1)[0]:
+                cand = plain_verbs(cand)  # a verb the model chose, not one the user already had
             if cand == el["text"]:
                 pending.pop(eid)
                 continue

@@ -40,6 +40,7 @@ class ProjectInput:
     features: list[str]  # verified README feature statements
     matched: list[str] = field(default_factory=list)
     score: float = 0.0
+    language: str = ""  # the repository's primary language
 
 
 @dataclass
@@ -151,18 +152,30 @@ def evidence_bullets(p: ProjectInput, focus: JobFocus) -> list[str]:
     """Bullets for a project with no user-written bullets, assembled only from verified facts: the repository
     description the user wrote and its verified technologies and README features. Marked for review in the UI."""
     out = []
-    tech = p.tech[:5]
     desc = _clean_description(p.description)
+    named = {m.key for m in find_skills(desc or "")}
+    # at most three technologies, none the description already names, so the sentence stays readable
+    tech = [t for t in p.tech if not ({m.key for m in find_skills(t)} & named)][:3]
     using = f" using {_join(tech)}" if tech else ""
     if desc and not re.search(r"\byou(r|rs)?\b", desc, re.I):
-        lead = desc[0].lower() + desc[1:]
-        article = "" if re.match(r"(a|an|the)\s", lead) else ("an " if lead[:1] in "aeiou" else "a ")
+        first_word = desc.split(" ", 1)[0]
+        keep_case = bool(find_skills(first_word)) or first_word.isupper() or not first_word[1:].islower()
+        lead = desc if keep_case else desc[0].lower() + desc[1:]
+        article = "" if re.match(r"(a|an|the)\s", lead, re.I) else ("an " if lead[:1].lower() in "aeiou" else "a ")
+        if len((lead + using).split()) > 26:
+            using = ""
         out.append(f"Built {article}{lead}{using}.")
     elif tech:
         out.append(f"Built {p.title}{using}.")
     for f in sorted(p.features, key=lambda f: -relevance(f, focus))[:2]:
         f = f.strip().rstrip(".")
         if re.search(r"\byou(r|rs)?\b", f, re.I) and len(f.split()) > 3:
+            continue
+        head, colon, detail = f.partition(":")
+        if colon and 1 <= len(head.split()) <= 5 and detail.strip():
+            # README style "QR tickets: generated unique ticket codes; ..." -> one sentence, first clause only
+            clause = re.split(r"[;.]", detail.strip())[0].strip()
+            out.append(f"Implemented {head.strip()[0].lower() + head.strip()[1:]} ({clause}).")
             continue
         first, _, rest = f.partition(" ")
         if first.lower() in IMPERATIVE:
@@ -172,6 +185,76 @@ def evidence_bullets(p: ProjectInput, focus: JobFocus) -> list[str]:
         else:
             out.append(f"Implemented {f[0].lower() + f[1:]}.")
     return out
+
+
+# A link to a GitHub profile rather than a repository (github.com/user or github.com/user/).
+PROFILE_URL = re.compile(r"^https?://(www\.)?github\.com/[A-Za-z0-9-]+/?$", re.I)
+
+
+def _project_tech(p: ProjectInput, bullets: list[str]) -> list[str]:
+    """The project's verified technologies; failing that, the ones its own bullets and description name, then
+    the repository's language - never a technology the project's material does not mention."""
+    if p.tech:
+        return p.tech
+    found = []
+    for text in [*bullets, p.description, *p.features]:
+        for m in find_skills(text or "", include_weak=False):
+            name = text[m.start : m.end] if m.key not in SKILLS else display_name(m.key)
+            if name not in found:
+                found.append(name)
+    if not found and p.language:
+        found = [p.language]
+    return found
+
+
+def _significant(text: str) -> set[tuple[str, ...]]:
+    words = [w for w in re.findall(r"[a-z0-9+#.]+", text.lower()) if len(w) > 2 and w not in STOPWORDS]
+    return {tuple(words[i : i + 3]) for i in range(len(words) - 2)}
+
+
+STOPWORDS = {"and", "the", "with", "for", "using", "from", "into", "that", "this", "built", "developed", "designed"}
+
+
+def _repeats_experience(items: list[dict], experiences: list["ExperienceInput"]) -> str:
+    """The organisation whose Experience bullets these template bullets repeat, or ""."""
+    mine = set().union(*[_significant(it["text"]) for it in items if not it.get("tech_line")]) if items else set()
+    if not mine:
+        return ""
+    for e in experiences:
+        theirs = set().union(*[_significant(b) for b in e.bullets]) if e.bullets else set()
+        if len(mine & theirs) >= 3:
+            return e.organization
+    return ""
+
+
+# Thesaurus verbs models reach for to "vary" openings. Engineers do not write them, and recruiters read them as
+# generated text; each becomes the plain verb a person would use.
+PLAIN_VERBS = {
+    "formulated": "Built",
+    "constructed": "Built",
+    "assembled": "Created",
+    "fabricated": "Created",
+    "crafted": "Built",
+    "programmed": "Developed",
+    "coded": "Wrote",
+    "engineered": "Developed",
+    "executed": "Performed",
+    "architected": "Designed",
+    "devised": "Designed",
+    "orchestrated": "Coordinated",
+    "utilized": "Used",
+    "utilised": "Used",
+    "leveraged": "Used",
+    "spearheaded": "Started",
+    "effectuated": "Carried out",
+    "actualized": "Built",
+}
+
+
+def plain_verbs(text: str) -> str:
+    first, sep, rest = text.partition(" ")
+    plain = PLAIN_VERBS.get(first.lower().strip(","))
+    return f"{plain}{sep}{rest}" if plain else text
 
 
 def _join(items: list[str]) -> str:
@@ -345,9 +428,25 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
                     tech_line = next((it["text"] for it in template_items if it.get("tech_line")), None)
                 else:
                     pool = [(b, "evidence") for b in evidence_bullets(p, focus)]
+                copied_from = _repeats_experience([{"text": b} for b, o in pool if o != "evidence"], inputs.experiences)
+                drafted = [(b, "evidence") for b in evidence_bullets(p, focus)] if copied_from else []
+                if drafted:
+                    # These bullets repeat an Experience entry under this project's title: describe the project from
+                    # its own repository instead, so the same work is not listed twice.
+                    pool, tech_line = drafted, None
+                    changes.append(
+                        {
+                            "section": sec["title"],
+                            "type": "drafted",
+                            "detail": f"{p.title}: its bullets repeated your {copied_from} experience, so they were "
+                            "replaced with bullets from this project's repository - review the wording",
+                        }
+                    )
                 uses_tech_lines = any(it.get("tech_line") for e2 in sec["entries"] for it in e2["items"])
-                if uses_tech_lines and not tech_line and p.tech:
-                    tech_line = "Technologies: " + ", ".join(p.tech[:6])  # only verified technologies
+                if uses_tech_lines and not tech_line:
+                    tech = _project_tech(p, [b for b, _ in pool])
+                    if tech:
+                        tech_line = "Technologies: " + ", ".join(tech[:6])
                 if not pool:
                     continue
                 ranked = sorted(pool, key=lambda bo: -relevance(bo[0], focus))
@@ -363,8 +462,20 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
                         "tech": ", ".join(p.tech[:5]),
                     }
                 )
+                relink = False
+                if p.url and PROFILE_URL.match(fields.get("url") or "") and not PROFILE_URL.match(p.url):
+                    changes.append(
+                        {
+                            "section": sec["title"],
+                            "type": "link",
+                            "detail": f"{p.title}: linked the project's repository instead of your GitHub profile",
+                        }
+                    )
+                    fields["url"] = p.url
+                    relink = True
                 entry = {
                     "source_index": idx,
+                    "rewrite_url": relink,
                     "fields": fields,
                     "ref": {"type": "project", "id": p.id},
                     "matched": p.matched[:8],
@@ -450,8 +561,61 @@ def tailor(inputs: TailorInputs, provider: LLMProvider | None = None) -> tuple[d
             provider, rewrite_jobs, focus, changes, guidance=inputs.guidance, concise_summary="concise_summary" in flags
         )
 
+    _harmonize_names(sections_out, _template_spellings(inputs.structure))
     content = {"sections": sections_out, "focus": focus.ordered[:15], "used_llm": used_llm}
     return content, changes
+
+
+def _template_spellings(structure: dict) -> dict[str, str]:
+    """How the user's own template spells each technology (React.js, not React). The skills section wins over
+    sentences, and a capitalised spelling over a lower-case one ("machine learning models" in a bullet)."""
+    skills, prose = [], []
+    for sec in structure.get("sections", []):
+        for cat in sec.get("skills") or []:
+            skills += cat.get("items") or []
+        for e in sec.get("entries") or []:
+            prose += [it["text"] for it in e.get("items") or []]
+    out: dict[str, str] = {}
+    for t in skills + prose:
+        for m in find_skills(t, include_weak=False):
+            name = t[m.start : m.end]
+            if m.key not in out or (out[m.key].islower() and not name.islower()):
+                out[m.key] = name
+    return out
+
+
+def _respell(text: str, spellings: dict[str, str]) -> str:
+    for m in sorted(find_skills(text, include_weak=False), key=lambda m: -m.start):
+        want, have = spellings.get(m.key), text[m.start : m.end]
+        if not want:
+            continue
+        case_only = have.lower() == want.lower()
+        # React -> React.js and Javascript -> JavaScript; never API -> APIs, and never re-capitalise ordinary
+        # lower-case words in a sentence ("machine learning models")
+        if (
+            want
+            and have != want
+            and _bare(have) == _bare(want)
+            and not (case_only and (have.islower() or want.islower()))
+        ):
+            text = text[: m.start] + want + text[m.end :]
+    return text
+
+
+def _bare(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower()).removesuffix("js")
+
+
+def _harmonize_names(sections: list[dict], spellings: dict[str, str]) -> None:
+    """One spelling per technology across the page, so the skills row and the bullets agree."""
+    if not spellings:
+        return
+    for sec in sections:
+        for e in sec.get("entries") or []:
+            for b in e.get("bullets") or []:
+                b["text"] = _respell(b["text"], spellings)
+        for c in sec.get("categories") or []:
+            c["items"] = list(dict.fromkeys(_respell(it, spellings) for it in c["items"]))
 
 
 def _find_experience(exps: list[ExperienceInput], fields: dict) -> ExperienceInput | None:
@@ -548,7 +712,11 @@ LLM_SYSTEM = (
     "keeping every fact identical. Write like an engineer describing their own work: action + what was built or "
     "done + technology or method + a result only if the original states one. Rules: do not add technologies, "
     "numbers, users, customers, scale, impact, leadership or awards that the original does not state; keep each "
-    "bullet under 30 words; start bullets with a specific past-tense verb and vary the verbs; no first person; no "
+    "bullet under 30 words; start bullets with a plain past-tense verb an engineer would write (Built, "
+    "Developed, Designed, Implemented, Added, Wrote, Tested, Deployed, Integrated, Automated, Fixed, Improved, "
+    "Trained, Analysed), using "
+    "none more than twice and never thesaurus verbs such as Formulated, Constructed, Assembled, Executed, "
+    "Programmed, Coded, Engineered, Crafted or Orchestrated; no first person; no "
     "marketing language or filler such as leveraged, cutting-edge, spearheaded, harnessed, seamlessly, robust, "
     "innovative, passionate, results-driven, state-of-the-art, pivotal, utilized, synergy; do not copy sentences "
     "from the job description; do not repeat a keyword just to include it. If an item cannot be improved, return "
@@ -575,6 +743,8 @@ def _llm_rewrite(
             items[key] = {"kind": "summary", "text": job["section"]["text"]}
         else:
             items[key] = {"kind": "bullet", "entry": job["context"], "text": job["bullet"]["text"]}
+            if job["bullet"].get("origin") == "evidence":
+                items[key]["drafted"] = True
     focus_names = ", ".join(display_name(k) for k in focus.ordered[:15])
     extra = ""
     if guidance:
@@ -586,6 +756,11 @@ def _llm_rewrite(
         extra += "Keep the summary to at most two short sentences.\n"
     if fix_notes:
         extra += f"Fix these problems in the items: {fix_notes}\n"
+    if any(it.get("drafted") for it in items.values()):
+        extra += (
+            "Items marked drafted were assembled from repository README text. Always rewrite each one into a "
+            "natural resume bullet about what the candidate built, keeping only facts it already states.\n"
+        )
     prompt = (
         f"Target role: {focus.role or 'not stated'} at {focus.company or 'the company'}.\n"
         f"Skills the job emphasises (in order): {focus_names}.\n" + extra + "\n"
@@ -608,7 +783,7 @@ def _llm_rewrite(
         new = rewritten.get(job["key"])
         if not isinstance(new, str) or not new.strip():
             continue
-        new = re.sub(r"\s+", " ", new).strip()
+        new = plain_verbs(re.sub(r"\s+", " ", new).strip())
         if job["type"] == "summary":
             sec = job["section"]
             if _norm(new) == _norm(sec["text"]):
@@ -721,6 +896,7 @@ def to_render_instructions(content: dict) -> list[dict]:
                     "source_index": e.get("source_index"),
                     "fields": e.get("fields", {}),
                     "rewrite_heading": bool(e.get("rewrite_heading")),
+                    "rewrite_url": bool(e.get("rewrite_url")),
                     "bullets": None if e.get("bullets") is None else [b["text"] for b in e["bullets"]],
                 }
                 for e in sec["entries"]

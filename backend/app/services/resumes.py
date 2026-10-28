@@ -538,6 +538,7 @@ def build_inputs(db: Session, job: Job, tpl: ResumeTemplate, cfg: dict | None = 
         ):
             chosen.append(p.id)
     by_id = {p.id: p for p in all_projects}
+    own_names = {sk.canonical: sk.name for sk in db.scalars(select(Skill).where(Skill.user_id == user_id))}
     projects = []
     for pid in chosen:
         p = by_id.get(pid)
@@ -563,10 +564,11 @@ def build_inputs(db: Session, job: Job, tpl: ResumeTemplate, cfg: dict | None = 
                 description=p.description,
                 bullets=[b.text for b in p.bullets],
                 claimable=claimable,
-                tech=[display_name(k) for k in tech_keys],
+                tech=[own_names.get(k) or display_name(k) for k in tech_keys],  # the user's spelling
                 features=features,
                 matched=[m["label"] for m in rec.matched] if rec else [],
                 score=rec.score if rec else 0,
+                language=p.primary_language or "",
             )
         )
     exps = [
